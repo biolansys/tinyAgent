@@ -1,0 +1,8 @@
+{
+  "huggingface_models": [
+    "Qwen/Qwen3-Coder-480B-A35B-Instruct",
+    "deepseek-ai/DeepSeek-V3-0324",
+    "meta-llama/Llama-3.1-8B-Instruct"
+  ],
+  "provider_mode": "auto"
+}

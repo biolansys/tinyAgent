@@ -1,0 +1,47 @@
+{
+  "active": "coding",
+  "profiles": {
+    "fast": {
+      "description": "Prefer faster, fewer-step execution.",
+      "provider_mode": "auto",
+      "max_steps_per_task": 4,
+      "max_tool_iterations_per_step": 10,
+      "temperature": 0.1
+    },
+    "coding": {
+      "description": "Balanced default profile for coding.",
+      "provider_mode": "auto",
+      "max_steps_per_task": 8,
+      "max_tool_iterations_per_step": 20,
+      "temperature": 0.2
+    },
+    "debug": {
+      "description": "More tool iterations for debugging complex errors.",
+      "provider_mode": "auto",
+      "max_steps_per_task": 12,
+      "max_tool_iterations_per_step": 35,
+      "temperature": 0.1
+    },
+    "safe": {
+      "description": "Conservative profile with fewer tool iterations.",
+      "provider_mode": "auto",
+      "max_steps_per_task": 5,
+      "max_tool_iterations_per_step": 12,
+      "temperature": 0.0
+    },
+    "huggingface": {
+      "description": "Prefer Hugging Face provider only.",
+      "provider_mode": "huggingface",
+      "max_steps_per_task": 8,
+      "max_tool_iterations_per_step": 20,
+      "temperature": 0.2
+    },
+    "openrouter": {
+      "description": "Prefer OpenRouter provider only.",
+      "provider_mode": "openrouter",
+      "max_steps_per_task": 8,
+      "max_tool_iterations_per_step": 20,
+      "temperature": 0.2
+    }
+  }
+}
