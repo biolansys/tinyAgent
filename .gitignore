@@ -1,0 +1,12 @@
+.env
+*.local
+
+# Local caches
+.openrouter_models_cache.json
+__pycache__/
+*.pyc
+
+# Session artifacts
+logs/
+backups/
+snapshots/
