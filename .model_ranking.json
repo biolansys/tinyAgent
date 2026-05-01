@@ -624,12 +624,12 @@
     "last_used": "2026-05-01T09:58:19"
   },
   "mistral::ministral-3b-2512": {
-    "attempts": 1539,
-    "successes": 1539,
+    "attempts": 1548,
+    "successes": 1548,
     "failures": 0,
-    "total_latency": 1379.9052698612213,
+    "total_latency": 1386.16215634346,
     "last_error": "",
-    "last_used": "2026-05-01T14:10:26"
+    "last_used": "2026-05-01T16:22:08"
   },
   "mistral::ministral-3b-latest": {
     "attempts": 44,

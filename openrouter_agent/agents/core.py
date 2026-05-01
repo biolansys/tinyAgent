@@ -7,6 +7,7 @@ from ..tools.registry import TOOLS, SCHEMAS
 from ..ui import console as ui
 from ..audit import new_task_id, log_task_start, log_task_plan, log_task_end, log_tool_call
 from ..checkpoints import save_checkpoint, load_checkpoint
+from ..tools.files import normalize_agent_path
 
 DRY_RUN_TOOLS = {"write_text_file", "replace_in_file", "patch_lines", "create_requirements", "run_shell_command"}
 MUTATING_TOOLS = {
@@ -73,6 +74,29 @@ class AgentRuntime:
             f"Args: {json.dumps(args, ensure_ascii=False)[:500]}"
         )
         return input("Allow this mutating tool call? [y/N]: ").strip().lower() == "y"
+
+    def _enforce_edit_scope(self, tool_name, args):
+        target = str(getattr(self.state, "edit_target_file", "") or "").strip()
+        if not target:
+            return None
+
+        # In /edit mode, only direct file mutations on the selected file are allowed.
+        path_based_tools = {"write_text_file", "replace_in_file", "patch_lines"}
+        if tool_name in path_based_tools:
+            requested = normalize_agent_path(args.get("path", ""))
+            if requested == target:
+                return None
+            return (
+                f"EDIT SCOPE: blocked {tool_name} on '{requested or '.'}'. "
+                f"Only '{target}' is allowed in /edit mode."
+            )
+
+        if tool_name in MUTATING_TOOLS:
+            return (
+                f"EDIT SCOPE: blocked mutating tool {tool_name}. "
+                f"Only direct edits to '{target}' are allowed in /edit mode."
+            )
+        return None
 
     def create_plan(self, user_input):
         msgs = [
@@ -160,6 +184,13 @@ class AgentRuntime:
                     messages.append({"role": "tool", "tool_call_id": call["id"], "name": name, "content": str(result)})
                     if self.state.verbose >= 1:
                         ui.warn(result)
+                    continue
+                scope_block = self._enforce_edit_scope(name, args)
+                if scope_block:
+                    messages.append({"role": "tool", "tool_call_id": call["id"], "name": name, "content": scope_block})
+                    log_tool_call(self.current_task_id, name, args, scope_block)
+                    if self.state.verbose >= 1:
+                        ui.warn(scope_block)
                     continue
                 if name in MUTATING_TOOLS and not self._confirm_retry_mutation(name, args):
                     result = f"SAFE RETRY: blocked mutating tool call {name}."

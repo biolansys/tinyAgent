@@ -1,4 +1,6 @@
 import json
+import difflib
+import shlex
 try:
     import readline
 except Exception:
@@ -10,7 +12,7 @@ from .providers.ranking import ranking_report, reset_rankings, rank_routes
 from .providers.client import MultiProviderClient
 from .agents.core import AgentRuntime
 from .ui import console as ui
-from .tools.files import snapshot, export_repo, validate_path, read_file_with_line_numbers
+from .tools.files import snapshot, export_repo, validate_path, read_file_with_line_numbers, read_text_file, write_text_file
 from .tools.shell import run_shell_command
 from .guidance import ensure_guidance_files, load_guidance
 from .indexer import build_code_index, search_code_index, index_stats, explain_index_file
@@ -83,6 +85,7 @@ COMMANDS = {
     "/index": "Build or refresh active project code index",
     "/indexstats": "Show code index statistics",
     "/searchcode QUERY": "Search code index",
+    "/edit FILE [--instruction TEXT] [--preview]": "Guided edit loop for one file with diff + confirm",
     "/explain FILE": "Explain a file using the agent",
     "/reviewfile FILE": "Review a file using the agent",
     "/refactor FILE": "Ask agent for safe refactor suggestions",
@@ -154,7 +157,7 @@ HELP_SECTIONS = [
         "/index", "/indexstats", "/searchcode QUERY",
     ]),
     ("Agent Tasks", [
-        "/explain FILE", "/reviewfile FILE", "/refactor FILE", "/fix TEXT", "/tests",
+        "/edit FILE [--instruction TEXT] [--preview]", "/explain FILE", "/reviewfile FILE", "/refactor FILE", "/fix TEXT", "/tests",
     ]),
     ("Git", [
         "/gitstatus", "/gitfiles", "/gitdiff", "/gitdiffcached", "/gitadd", "/gitunstage",
@@ -276,6 +279,102 @@ def runs_text():
             f"next_step={row.get('next_step_index')} | updated={row.get('updated_at')}"
         )
     return "\n".join(lines)
+
+
+def parse_edit_spec(spec):
+    tokens = shlex.split(str(spec or ""), posix=True)
+    if not tokens:
+        return None, None, False, "Usage: /edit FILE [--instruction TEXT] [--preview]"
+    target = tokens[0].strip()
+    if not target or target.startswith("--"):
+        return None, None, False, "Usage: /edit FILE [--instruction TEXT] [--preview]"
+
+    instruction_parts = []
+    preview = False
+    i = 1
+    while i < len(tokens):
+        token = tokens[i]
+        if token == "--preview":
+            preview = True
+            i += 1
+            continue
+        if token == "--instruction":
+            i += 1
+            while i < len(tokens) and not tokens[i].startswith("--"):
+                instruction_parts.append(tokens[i])
+                i += 1
+            continue
+        return None, None, False, f"Unknown option: {token}"
+
+    instruction = " ".join(instruction_parts).strip() or None
+    return target, instruction, preview, None
+
+
+def run_edit_file(runtime, path):
+    target, instruction, preview, err = parse_edit_spec(path)
+    if err:
+        return err
+    from .tools.files import normalize_agent_path
+    target_norm = normalize_agent_path(target)
+    original_text = read_text_file(target_norm)
+    if original_text.startswith(("File does not", "Access denied", "File too large")):
+        return original_text
+
+    if instruction is None:
+        instruction = input(ui.cyan("Edit instruction: ")).strip()
+    if not instruction:
+        return "Edit cancelled."
+
+    task_prompt = (
+        "Edit only the specified file. Apply the requested changes directly and safely. "
+        "Do not modify any other files.\n\n"
+        f"Target file: {target_norm}\n"
+        f"Edit request: {instruction}"
+    )
+    old_target = getattr(runtime.state, "edit_target_file", "")
+    old_preview = getattr(runtime.state, "edit_preview_mode", False)
+    old_dry_run = getattr(runtime.state, "dry_run", False)
+    runtime.state.edit_target_file = target_norm
+    runtime.state.edit_preview_mode = preview
+    if preview:
+        runtime.state.dry_run = True
+    try:
+        task_result = runtime.run_task(task_prompt)
+    finally:
+        runtime.state.edit_target_file = old_target
+        runtime.state.edit_preview_mode = old_preview
+        runtime.state.dry_run = old_dry_run
+
+    if preview:
+        return f"Preview complete. No changes applied.\n{task_result}"
+
+    updated_text = read_text_file(target_norm)
+    if updated_text.startswith(("File does not", "Access denied", "File too large")):
+        return updated_text
+
+    before = original_text.splitlines()
+    after = updated_text.splitlines()
+    if before == after:
+        return "No changes were made."
+
+    diff = "\n".join(
+        difflib.unified_diff(
+            before,
+            after,
+            fromfile=f"{target_norm} (before)",
+            tofile=f"{target_norm} (after)",
+            lineterm="",
+        )
+    )
+    print(diff[:12000])
+
+    if input(ui.cyan("Keep these changes? [y/N]: ")).strip().lower() != "y":
+        restore = "\n".join(before)
+        if before:
+            restore += "\n"
+        write_text_file(target_norm, restore)
+        return "Changes rolled back."
+    return "Changes kept."
 
 
 def parse_taskretry(spec):
@@ -797,7 +896,11 @@ def handle_exact_command(user_input, state, runtime):
         print(git_safe_directory())
         return True
     if user_input == "/history":
-        print(history_report())
+        report = history_report()
+        if str(report).startswith("No task history"):
+            ui.panel(report, title="Task History", style="yellow")
+        else:
+            ui.panel(report, title="Task History", style="cyan")
         return True
     if user_input == "/historyclear":
         print(clear_history())
@@ -992,6 +1095,9 @@ def handle_prefixed_command(user_input, state, runtime):
         return True
     if user_input.startswith("/searchcode "):
         print(search_code_index(user_input.split(" ", 1)[1].strip()))
+        return True
+    if user_input.startswith("/edit "):
+        print(run_edit_file(runtime, user_input.split(" ", 1)[1].strip()))
         return True
     if user_input.startswith("/explain "):
         target = user_input.split(" ", 1)[1].strip()

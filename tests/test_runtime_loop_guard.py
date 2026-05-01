@@ -118,6 +118,44 @@ class RuntimeLoopGuardTests(unittest.TestCase):
         self.assertEqual("done", result)
         self.assertFalse(tool_called["value"])
 
+    def test_execute_step_edit_scope_blocks_other_file_mutation(self):
+        state = make_state()
+        state.edit_target_file = "allowed.txt"
+        runtime = AgentRuntime(client=SequencedClient(), state=state)
+        tool_called = {"value": False}
+
+        def fake_write_text_file(**_kwargs):
+            tool_called["value"] = True
+            return "written"
+
+        with patch("openrouter_agent.agents.core.read_memory_text", return_value=""), patch(
+            "openrouter_agent.agents.core.log_tool_call"
+        ), patch.dict(
+            "openrouter_agent.agents.core.TOOLS", {"write_text_file": fake_write_text_file}, clear=False
+        ), patch.object(
+            runtime.client,
+            "chat",
+            side_effect=[
+                {
+                    "_tools_enabled": True,
+                    "choices": [{
+                        "message": {
+                            "content": "",
+                            "tool_calls": [{
+                                "id": "call-1",
+                                "function": {"name": "write_text_file", "arguments": "{\"path\":\"other.txt\",\"content\":\"x\"}"},
+                            }],
+                        }
+                    }],
+                },
+                {"_tools_enabled": False, "choices": [{"message": {"content": "done"}}]},
+            ],
+        ):
+            result = runtime.execute_step("do work", {"steps": [{"id": 1}]}, {"id": 1, "title": "x"})
+        self.assertEqual("done", result)
+        self.assertFalse(tool_called["value"])
+        self.assertEqual("allowed.txt", state.edit_target_file)
+
 
 if __name__ == "__main__":
     unittest.main()

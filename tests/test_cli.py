@@ -356,6 +356,65 @@ class CliTests(unittest.TestCase):
         mock_print.assert_called_once_with("Removed Mistral model: codestral-latest")
         mock_info.assert_called_once()
 
+    def test_handle_prefixed_command_edit_prints_result(self):
+        state = make_state()
+        runtime = make_runtime()
+        with patch("openrouter_agent.cli.run_edit_file", return_value="Changes kept."), patch(
+            "builtins.print"
+        ) as mock_print:
+            handled = cli.handle_prefixed_command("/edit app.py", state, runtime)
+        self.assertTrue(handled)
+        mock_print.assert_called_once_with("Changes kept.")
+
+    def test_parse_edit_spec_parses_instruction_and_preview(self):
+        target, instruction, preview, err = cli.parse_edit_spec('app.py --instruction "add docs" --preview')
+        self.assertIsNone(err)
+        self.assertEqual("app.py", target)
+        self.assertEqual("add docs", instruction)
+        self.assertTrue(preview)
+
+    def test_run_edit_file_with_instruction_uses_provided_instruction(self):
+        state = make_state()
+        runtime = make_runtime()
+        runtime.state = state
+        runtime.run_task = MagicMock(return_value="task result")
+        with patch("openrouter_agent.cli.read_text_file", side_effect=["line1\n", "line1\nline2\n"]), patch(
+            "openrouter_agent.cli.input", return_value="y"
+        ):
+            result = cli.run_edit_file(runtime, 'allowed.txt --instruction "add line"')
+        self.assertEqual("Changes kept.", result)
+        runtime.run_task.assert_called_once()
+        prompt = runtime.run_task.call_args[0][0]
+        self.assertIn("Target file: allowed.txt", prompt)
+        self.assertIn("Edit request: add line", prompt)
+
+    def test_run_edit_file_preview_returns_no_changes_applied(self):
+        state = make_state()
+        runtime = make_runtime()
+        runtime.state = state
+        runtime.run_task = MagicMock(return_value="preview result")
+        with patch("openrouter_agent.cli.read_text_file", return_value="line1\n"), patch(
+            "openrouter_agent.cli.input"
+        ) as mock_input:
+            result = cli.run_edit_file(runtime, 'allowed.txt --instruction "add line" --preview')
+        self.assertIn("Preview complete. No changes applied.", result)
+        self.assertEqual("preview result", result.splitlines()[-1])
+        mock_input.assert_not_called()
+        self.assertFalse(state.dry_run)
+
+    def test_run_edit_file_restores_previous_edit_target(self):
+        state = make_state()
+        state.edit_target_file = "existing.txt"
+        runtime = make_runtime()
+        runtime.state = state
+        runtime.run_task = MagicMock(return_value="task result")
+        with patch("openrouter_agent.cli.read_text_file", side_effect=["line1\n", "line1\nline2\n"]), patch(
+            "openrouter_agent.cli.input", side_effect=["add line", "y"]
+        ):
+            result = cli.run_edit_file(runtime, "allowed.txt")
+        self.assertEqual("Changes kept.", result)
+        self.assertEqual("existing.txt", state.edit_target_file)
+
     def test_handle_exact_command_gitsafedir_prints_result(self):
         state = make_state()
         runtime = make_runtime()
