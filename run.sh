@@ -1,2 +1,2 @@
-#!/bin/bash
-python openrouter_agent_v16_3.py
+#!/usr/bin/env bash
+python main.py

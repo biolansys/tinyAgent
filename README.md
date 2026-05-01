@@ -1,183 +1,324 @@
-# TinyAgent
+# OpenRouter Agent V21 Production
 
-TinyAgent is a local coding agent centered on [`openrouter_agent_v16_3.py`](C:\Varios\IA\TinyAgent\OpenRouterV16_3\openrouter_agent_v16_3.py). This version is a multi-provider CLI agent that can work with OpenRouter and Hugging Face chat routes, use guided file-editing tools inside `workspace/`, keep project memory, create backups and snapshots, and apply local guidance from `AGENTS.md` and `SKILL/**/SKILLS.md`.
+Multi-provider coding agent with active-project isolation under `workspace/`.
 
-## Current Capabilities
+## Overview
 
-- Multi-provider model routing with `openrouter`, `huggingface`, or `auto` mode.
-- Working-model discovery with local cache in `.openrouter_models_cache.json`.
-- Interactive coding loop with planning, tool use, and optional reviewer/fixer follow-up rounds.
-- Agent profiles for `fast`, `coding`, `debug`, `safe`, `openrouter`, and `huggingface`.
-- Safe file operations restricted to `workspace/` for normal project edits.
-- Automatic backups before overwrites and ZIP snapshots for larger checkpoints.
-- Local project memory stored in `workspace/.agent_memory.json`.
-- Guidance loading from `AGENTS.md` and `SKILL/**/SKILLS.md`.
-- Optional Rich dashboard UI and colorized terminal output.
+The app is a local CLI coding agent that can:
 
-## Repository Layout
+- route requests through OpenRouter or Hugging Face
+- discover working free or configured models
+- operate on one active project at a time inside `workspace/`
+- keep per-project memory, index, audit, history, and session state
+- expose safe file, git, and configured OS command helpers
 
-- [`openrouter_agent_v16_3.py`](C:\Varios\IA\TinyAgent\OpenRouterV16_3\openrouter_agent_v16_3.py): main interactive agent.
-- [`run.bat`](C:\Varios\IA\TinyAgent\OpenRouterV16_3\run.bat): Windows launcher.
-- [`run.sh`](C:\Varios\IA\TinyAgent\OpenRouterV16_3\run.sh): Unix-like launcher.
-- [`AGENTS.md`](C:\Varios\IA\TinyAgent\OpenRouterV16_3\AGENTS.md): repository rules for coding agents.
-- [`SKILL/`](C:\Varios\IA\TinyAgent\OpenRouterV16_3\SKILL): reusable guidance packs loaded into the prompt.
-- `workspace/`: editable project workspace.
-- `logs/`: saved chat sessions.
-- `backups/`: backup files created before overwrites.
-- `snapshots/`: workspace and repository ZIP exports.
-- `.agent_providers.json`: provider config, including Hugging Face model list and provider mode.
-- `.agent_profiles.json`: profile definitions and active profile.
-- `.openrouter_models_cache.json`: discovered-model cache.
+## Current Model
 
-## Requirements
+`workspace/` is a container for isolated projects:
 
-- Python 3.10 or newer.
-- At least one provider credential:
-  - `OPENROUTER_API_KEY`
-  - `HF_TOKEN` or `HUGGINGFACE_API_KEY`
-- Internet access for model discovery and chat completions.
+```text
+workspace/
+  app1/
+  app2/
+  app3/
+```
 
-Optional terminal packages:
+The active project controls the scope for:
 
-- `colorama` for colored output fallback on Windows.
-- `rich` for dashboards, panels, tables, and syntax views.
+- file reads and writes
+- code indexing
+- memory
+- task history
+- tool audit
+- snapshots and exports
+- git commands
+- `/cmd cat ...`, `/cmd dir`, `/cmd pwd`, and other configured `/cmd` commands
+
+The prompt shows the current project as:
+
+```text
+You (app1):
+```
+
+## Providers
+
+- OpenRouter
+- Hugging Face Inference Router
+- Mistral AI
+
+## Features
+
+- modular agent runtime
+- planner / executor / reviewer flow
+- smart discovery with cache and ranking
+- per-project isolation inside `workspace/`
+- per-project session persistence
+- per-project `AGENTS.md` guidance support
+- code index and search
+- git helpers scoped to the active project repo
+- configurable `/cmd` commands from JSON
+- optional Rich terminal panels and tables
 
 ## Setup
 
-Create a root `.env` file or export the same variables in your shell:
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+python -m pip install -r requirements.txt
+```
+
+Create `.env`:
 
 ```env
 OPENROUTER_API_KEY=your_openrouter_key
 HF_TOKEN=your_huggingface_token
-# Optional: HF_MODELS=Qwen/Qwen3-Coder-480B-A35B-Instruct,deepseek-ai/DeepSeek-V3-0324
+MISTRAL_API_KEY=your_mistral_api_key
+HF_MODELS=Qwen/Qwen3-Coder-480B-A35B-Instruct,meta-llama/Llama-3.1-8B-Instruct
+MISTRAL_MODELS=mistral-small-latest,codestral-latest
+```
+
+## Run
+
+```bash
+python main.py
+```
+
+## Important Files
+
+- `.cmd_commands.json`: configured `/cmd` commands
+- `workspace/<project>/.cmd_commands.json`: project-local `/cmd` overrides and additions
+- `.model_discovery_cache.json`: discovery cache
+- `.model_ranking.json`: route ranking stats
+- `workspace/.active_project.json`: saved active project
+- `workspace/<project>/.agent_session.json`: per-project session settings
+- `workspace/<project>/AGENTS.md`: optional project-local guidance
+
+## `/cmd` Configuration
+
+Configured OS commands are loaded from:
+
+- repo-level `.cmd_commands.json`
+- active-project `workspace/<project>/.cmd_commands.json`
+
+Project-local commands override repo-level commands with the same name.
+
+Example:
+
+```json
+{
+  "dir": "dir",
+  "ls": "ls",
+  "pwd": "pwd",
+  "cat": "cat"
+}
+```
+
+Examples:
+
+```text
+/cmdlist
+/cmd pwd
+/cmd dir
+/cmd cat README.md
+/cmdadd whoami whoami
+/cmddel whoami
 ```
 
 Notes:
 
-- OpenRouter-only usage works with just `OPENROUTER_API_KEY`.
-- Hugging Face-only usage works with `HF_TOKEN`.
-- If `.env.example` is missing, the agent creates it automatically at startup.
+- `/cmd` only runs commands present in `.cmd_commands.json`
+- `/cmdadd` and `/cmddel` write to the active project's `.cmd_commands.json`
+- `cat` paths are resolved inside the active project
+- shell metacharacters are blocked
+- subprocess-style commands still require confirmation
 
-## Run
+## Commands
 
-Windows:
+### General
 
-```bat
-run.bat
+```text
+/help [COMMAND]
+/dashboard
+/usage
+/verbose LEVEL
+/clear
+/exit
 ```
 
-Unix-like systems:
+### Projects
+
+```text
+/projects
+/project NAME
+/projectnew NAME
+/projectclone SRC DEST
+/projectinfo [NAME]
+/projectrename OLD NEW
+/projectdelete NAME
+/projectpath
+```
+
+### Models
+
+```text
+/models
+/model ROUTE
+/provider MODE
+/profiles
+/profile NAME
+/hfmodels
+/addhfmodel MODEL
+/removehfmodel MODEL
+/mistralmodels
+/addmistralmodel MODEL
+/removemistralmodel MODEL
+```
+
+### Discovery
+
+```text
+/discover
+/discoverfull
+/discovercache
+/cleardiscover
+/resetmodels
+/ranking
+/resetranking
+```
+
+`/discoverfull` performs a full live scan without cache or early stop. OpenRouter is scanned across its fetched free-model catalog; Hugging Face is scanned across the configured HF candidate list; Mistral is scanned across the models available to the API key, or `.mistral_models` / `MISTRAL_MODELS` if provided.
+
+### Automation
+
+```text
+/auto on|off
+/smartauto on|off
+/review on|off
+/autorounds N
+/tooliters N
+/dryrun on|off
+```
+
+### Files And `/cmd`
+
+```text
+/snapshot NAME
+/exportrepo NAME
+/cmd NAME [ARGS]
+/cmdlist
+/cmdadd NAME COMMAND
+/cmddel NAME
+/path PATH
+/readlines FILE
+/index
+/indexstats
+/searchcode QUERY
+```
+
+### Agent Tasks
+
+```text
+/explain FILE
+/reviewfile FILE
+/refactor FILE
+/fix TEXT
+/tests
+```
+
+### Git
+
+```text
+/gitstatus
+/gitfiles
+/gitdiff
+/gitdiffcached
+/gitadd
+/gitunstage
+/gitlog [N]
+/gitshow [REF]
+/gitrestore
+/gitrestore FILE
+/gitcommitdry
+/gitinit
+/gitsafedir
+/gitsafedir apply
+/gitbranch NAME
+/gitcommit MESSAGE
+```
+
+Git behavior:
+
+- git commands only run when the active project has its own `.git`
+- `/gitinit` initializes the active project as its own repository
+- `/gitsafedir` shows the `git config --global --add safe.directory ...` fix for the active project
+- `/gitsafedir apply` applies that fix after confirmation
+- `/gitfiles` shows changed files in the active project
+- `/gitdiffcached` shows the staged diff
+- `/gitadd` stages active project changes
+- `/gitunstage` unstages active project changes
+- `/gitrestore FILE` restores tracked changes in one active-project file
+- `/gitcommit` previews the active-project diff before confirmation
+- `/gitcommit` stages and commits only the active project repo
+
+### Memory And History
+
+```text
+/memory
+/memoryclear
+/memorynote TEXT
+/cmdhistory
+/history
+/historyclear
+/task ID
+/audit
+/auditclear
+```
+
+The app also keeps the last 50 user-entered commands in the active project's session file so they are available again in the next session. They are reloaded into the prompt history for the active project, and `/cmdhistory` shows them explicitly.
+
+The startup/dashboard view also shows project-specific visibility details such as:
+
+- whether the active project has its own git repo
+- whether project-local `AGENTS.md` exists
+- the number of configured `/cmd` commands
+- the number of saved command-history entries
+- whether prompt-history support is available
+
+### Guidance
+
+```text
+/guidance
+/reloadguidance
+```
+
+Guidance is loaded from:
+
+- repo-level `AGENTS.md`
+- `SKILL/**/SKILLS.md`
+- active-project `workspace/<project>/AGENTS.md`
+
+## Discovery And Ranking
+
+The app stores route performance and discovery results in:
+
+```text
+.model_ranking.json
+.model_discovery_cache.json
+```
+
+Discovery reporting includes:
+
+- candidates scanned per provider
+- working and failed counts
+- failure reasons
+- cache vs live scan status
+
+## Testing
+
+Run:
 
 ```bash
-./run.sh
+python -m unittest discover -s tests -v
 ```
 
-Direct Python execution:
-
-```bash
-python openrouter_agent_v16_3.py
-```
-
-## How This Version Works
-
-1. Ensures `.env.example` and profile config files exist.
-2. Loads the active profile and provider mode.
-3. Creates or verifies `workspace/`, `logs/`, `backups/`, `snapshots/`, and `SKILL/`.
-4. Ensures `AGENTS.md` and `SKILL/**/SKILLS.md` guidance files exist.
-5. Loads repository guidance into the system prompt.
-6. Discovers usable provider routes or falls back to defaults.
-7. Builds a short JSON plan for each user request.
-8. Executes the plan with tools when needed.
-9. Optionally runs reviewer and fixer rounds when auto-review is enabled.
-10. Saves sessions, memory, backups, and snapshots locally.
-
-## Built-In Commands
-
-- `/help`
-- `/richhelp`
-- `/dashboard`
-- `/auto on|off`
-- `/review on|off`
-- `/autorounds N`
-- `/colors`
-- `/rich`
-- `/banner`
-- `/models`
-- `/modelstats`
-- `/health`
-- `/usage`
-- `/profiles`
-- `/tooliters N`
-- `/profile NAME`
-- `/provider MODE`
-- `/hfmodels`
-- `/addhfmodel MODEL`
-- `/removehfmodel MODEL`
-- `/model ROUTE`
-- `/resetmodels`
-- `/discover`
-- `/cacheclear`
-- `/initguides`
-- `/guides`
-- `/guidance`
-- `/reloadguidance`
-- `/snapshot NAME`
-- `/exportrepo [NAME]`
-- `/backups [filter]`
-- `/readlines FILE`
-- `/path PATH`
-- `/workspace`
-- `/memory`
-- `/inspect`
-- `/testcmd`
-- `/save`
-- `/clear`
-- `/exit`
-
-## Profiles And Provider Modes
-
-Default profiles:
-
-- `fast`: fewer steps and fewer tool iterations.
-- `coding`: balanced default profile.
-- `debug`: more tool iterations for troubleshooting.
-- `safe`: conservative execution profile.
-- `openrouter`: OpenRouter-only route preference.
-- `huggingface`: Hugging Face-only route preference.
-
-Provider modes:
-
-- `auto`: try both providers according to available routes.
-- `openrouter`: limit execution to OpenRouter routes.
-- `huggingface`: limit execution to Hugging Face routes.
-
-## Safety Model
-
-This implementation is intentionally conservative:
-
-- Normal project edits are scoped to `workspace/`.
-- Ignored paths include `.git`, virtual environments, caches, and build output directories.
-- Shell commands require explicit confirmation from the user.
-- Allowed shell commands are restricted to a small safe set such as Python, pip, pytest, `git status`, and `git diff`.
-- Backups are created before overwriting files.
-- ZIP snapshots and repository exports are available for safer checkpoints.
-
-## Generated Local Files
-
-- `workspace/.agent_memory.json`: persistent project memory.
-- `logs/session_YYYYMMDD_HHMMSS.json`: saved chat sessions.
-- `backups/**/*.bak`: file backups created before edits.
-- `snapshots/*.zip`: workspace snapshots and export archives.
-- `.agent_providers.json`: provider preferences and Hugging Face models.
-- `.agent_profiles.json`: active profile and profile definitions.
-
-## Notes
-
-- The model cache TTL is 12 hours in the current script.
-- Auto-review is enabled by default in this version.
-- The current script contains both the main executor loop and the reviewer/fixer logic in one file.
-- The app title in the script is `Multi-Provider Python Coding Agent V16.3`.
-
-## License
-
-This repository now uses the MIT License.
+The current test suite covers CLI dispatch, project isolation, git helpers, shell safety, discovery, guidance, memory/history, and `/cmd` config behavior.

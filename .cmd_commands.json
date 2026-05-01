@@ -1,0 +1,8 @@
+{
+  "dir": "dir",
+  "ls": "ls",
+  "pwd": "pwd",
+  "cat": "cat",
+  "type": "type",
+  "edit": "notepad"
+}
