@@ -40,6 +40,19 @@ class ShellToolTests(unittest.TestCase):
         self.assertEqual("Command cancelled.", result)
         mock_run.assert_not_called()
 
+    def test_run_shell_command_result_returns_structured_validation_error(self):
+        result = shell.run_shell_command_result("python -m pytest && whoami")
+        self.assertFalse(result.ok)
+        self.assertEqual("validation", result.category)
+        self.assertIn("Shell metacharacters are not allowed.", result.message)
+
+    def test_background_task_shell_confirmation_is_blocked_cleanly(self):
+        with patch("openrouter_agent.tools.shell._interactive_confirmation_available", return_value=False):
+            result = shell.run_shell_command_result("python -m pytest")
+        self.assertFalse(result.ok)
+        self.assertEqual("confirmation", result.category)
+        self.assertIn("blocked while a background task is running", result.message)
+
 
 if __name__ == "__main__":
     unittest.main()

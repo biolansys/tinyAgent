@@ -1,12 +1,25 @@
 import json
+from .. import config
 from .prompts import PLANNER_PROMPT, REVIEWER_PROMPT, FIXER_PROMPT
 from ..guidance import build_system_prompt
 from ..memory import read_memory_text, remember
 from ..tools.registry import TOOLS, SCHEMAS
 from ..ui import console as ui
 from ..audit import new_task_id, log_task_start, log_task_plan, log_task_end, log_tool_call
+from ..checkpoints import save_checkpoint, load_checkpoint
 
 DRY_RUN_TOOLS = {"write_text_file", "replace_in_file", "patch_lines", "create_requirements", "run_shell_command"}
+MUTATING_TOOLS = {
+    "write_text_file",
+    "replace_in_file",
+    "patch_lines",
+    "create_requirements",
+    "run_shell_command",
+    "remember_note",
+    "create_project_snapshot",
+    "export_repo",
+    "build_code_index",
+}
 
 def extract_json(text):
     try:
@@ -16,6 +29,29 @@ def extract_json(text):
         if s != -1 and e != -1 and e > s:
             return json.loads(text[s:e+1])
     raise ValueError("Could not extract JSON")
+
+
+def stringify_review_item(item):
+    if isinstance(item, str):
+        return item
+    if isinstance(item, (dict, list)):
+        return json.dumps(item, ensure_ascii=False)
+    return str(item)
+
+
+def tool_call_signature(call):
+    name = str(call.get("function", {}).get("name", ""))
+    raw = call.get("function", {}).get("arguments", "{}")
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        parsed = raw
+    try:
+        normalized = json.dumps(parsed, sort_keys=True, ensure_ascii=False)
+    except Exception:
+        normalized = str(parsed)
+    return f"{name}:{normalized}"
+
 
 class AgentRuntime:
     def __init__(self, client, state):
@@ -27,6 +63,16 @@ class AgentRuntime:
 
     def reset_messages(self):
         self.messages = [{"role": "system", "content": build_system_prompt()}]
+
+    def _confirm_retry_mutation(self, tool_name, args):
+        if not getattr(self.state, "retry_safe_mode", False):
+            return True
+        print(
+            "\nSafe retry mode: mutating tool call requested.\n"
+            f"Tool: {tool_name}\n"
+            f"Args: {json.dumps(args, ensure_ascii=False)[:500]}"
+        )
+        return input("Allow this mutating tool call? [y/N]: ").strip().lower() == "y"
 
     def create_plan(self, user_input):
         msgs = [
@@ -49,13 +95,23 @@ class AgentRuntime:
                 "risk_level": "medium",
             }
 
-    def execute_plan(self, user_input, plan):
-        outputs = []
-        for step in plan.get("steps", []):
+    def execute_plan(self, user_input, plan, start_index=0, outputs=None):
+        outputs = list(outputs or [])
+        steps = plan.get("steps", [])
+        for step_index in range(start_index, len(steps)):
+            step = steps[step_index]
             if self.state.verbose >= 1:
                 ui.panel(f"Executing step {step.get('id')}: {step.get('title')}", title="Step", style="yellow")
             out = self.execute_step(user_input, plan, step)
             outputs.append(f"Step {step.get('id')}: {out}")
+            save_checkpoint(self.current_task_id, {
+                "status": "in_progress",
+                "phase": "execute_plan",
+                "user_input": user_input,
+                "plan": plan,
+                "step_outputs": outputs,
+                "next_step_index": step_index + 1,
+            })
             ui.agent(out)
         return "\n\n".join(outputs)
 
@@ -66,6 +122,8 @@ class AgentRuntime:
             f"Plan:\n{json.dumps(plan, indent=2, ensure_ascii=False)}\n\n"
             f"Current step:\n{json.dumps(step, indent=2, ensure_ascii=False)}\n\nMemory:\n{read_memory_text()}"
         )})
+        repeat_cycles = 0
+        last_cycle_signature = None
 
         for _ in range(self.state.max_tool_iterations):
             data = self.client.chat(messages, tools=SCHEMAS)
@@ -78,6 +136,17 @@ class AgentRuntime:
             calls = msg.get("tool_calls")
             if not calls:
                 return msg.get("content", "")
+            cycle_signature = "|".join(tool_call_signature(call) for call in calls)
+            if cycle_signature == last_cycle_signature:
+                repeat_cycles += 1
+            else:
+                repeat_cycles = 1
+                last_cycle_signature = cycle_signature
+            if repeat_cycles >= config.MAX_REPEAT_TOOL_CYCLES:
+                return (
+                    f"Step paused after detecting {repeat_cycles} repeated tool-call cycles. "
+                    f"Last cycle: {cycle_signature[:200]}"
+                )
             for call in calls:
                 name = call["function"]["name"]
                 raw = call["function"].get("arguments", "{}")
@@ -89,6 +158,13 @@ class AgentRuntime:
                 if self.state.dry_run and name in DRY_RUN_TOOLS:
                     result = f"DRY RUN: would call {name} with args: {args}"
                     messages.append({"role": "tool", "tool_call_id": call["id"], "name": name, "content": str(result)})
+                    if self.state.verbose >= 1:
+                        ui.warn(result)
+                    continue
+                if name in MUTATING_TOOLS and not self._confirm_retry_mutation(name, args):
+                    result = f"SAFE RETRY: blocked mutating tool call {name}."
+                    messages.append({"role": "tool", "tool_call_id": call["id"], "name": name, "content": str(result)})
+                    log_tool_call(self.current_task_id, name, args, result)
                     if self.state.verbose >= 1:
                         ui.warn(result)
                     continue
@@ -142,8 +218,23 @@ class AgentRuntime:
         self.current_task_id = new_task_id()
         self.reset_messages()
         log_task_start(self.current_task_id, user_input)
+        save_checkpoint(self.current_task_id, {
+            "status": "in_progress",
+            "phase": "plan",
+            "user_input": user_input,
+            "next_step_index": 0,
+            "step_outputs": [],
+        })
         plan = self.create_plan(user_input)
         log_task_plan(self.current_task_id, plan)
+        save_checkpoint(self.current_task_id, {
+            "status": "in_progress",
+            "phase": "execute_plan",
+            "user_input": user_input,
+            "plan": plan,
+            "next_step_index": 0,
+            "step_outputs": [],
+        })
         self.print_plan(plan)
         result = self.execute_plan(user_input, plan)
 
@@ -165,6 +256,50 @@ class AgentRuntime:
                 plan = self.create_plan(next_prompt)
                 result = self.execute_plan(next_prompt, plan)
         log_task_end(self.current_task_id, result)
+        save_checkpoint(self.current_task_id, {
+            "status": "completed",
+            "phase": "done",
+            "user_input": user_input,
+            "plan": plan,
+            "next_step_index": len(plan.get("steps", [])),
+            "step_outputs": result.split("\n\n") if result else [],
+            "result_preview": str(result)[:4000],
+        })
+        return result
+
+    def resume_task(self, task_id):
+        checkpoint = load_checkpoint(task_id)
+        if not checkpoint:
+            return f"No checkpoint found for task: {task_id}"
+        if checkpoint.get("status") == "completed":
+            preview = checkpoint.get("result_preview", "")
+            return f"Task {task_id} is already completed.\n{preview}"
+        plan = checkpoint.get("plan")
+        user_input = checkpoint.get("user_input", "")
+        if not isinstance(plan, dict):
+            return f"Checkpoint for task {task_id} has no resumable plan."
+
+        self.current_task_id = task_id
+        self.reset_messages()
+        start_index = int(checkpoint.get("next_step_index", 0))
+        step_outputs = checkpoint.get("step_outputs", [])
+        if not isinstance(step_outputs, list):
+            step_outputs = []
+
+        result = self.execute_plan(user_input, plan, start_index=start_index, outputs=step_outputs)
+        if self.state.review_enabled:
+            review = self.reviewer(user_input, plan, result)
+            self.print_review(review)
+        log_task_end(self.current_task_id, result)
+        save_checkpoint(self.current_task_id, {
+            "status": "completed",
+            "phase": "done",
+            "user_input": user_input,
+            "plan": plan,
+            "next_step_index": len(plan.get("steps", [])),
+            "step_outputs": result.split("\n\n") if result else [],
+            "result_preview": str(result)[:4000],
+        })
         return result
 
     def print_plan(self, plan):
@@ -176,8 +311,11 @@ class AgentRuntime:
         ])
 
     def print_review(self, review):
+        issues = review.get("issues", [])
+        if not isinstance(issues, list):
+            issues = [issues]
         ui.table("Reviewer Report", [
             ("Status", review.get("status")),
             ("Summary", review.get("summary")),
-            ("Issues", "\n".join(review.get("issues", [])) or "None"),
+            ("Issues", "\n".join(stringify_review_item(item) for item in issues if item is not None) or "None"),
         ])

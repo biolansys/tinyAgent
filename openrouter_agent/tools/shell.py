@@ -1,12 +1,18 @@
 import subprocess
 import shlex
+import threading
 from pathlib import Path
 from .. import config
+from ..results import OperationResult
 from .files import read_text_file, safe_path
 from ..project_context import current_project_root
 
 SHELL_METACHARS = {"&", "|", ";", ">", "<", "`"}
 ALLOWED_BINARIES = {"python", "python3", "py", "pip", "pip3", "pytest", "git", "dir", "ls", "type", "cat", "pwd"}
+
+
+def _interactive_confirmation_available():
+    return threading.current_thread() is threading.main_thread()
 
 
 def _contains_shell_metacharacters(command):
@@ -70,23 +76,39 @@ def _validate_subprocess_tokens(tokens):
         raise ValueError("Inline Python execution is blocked.")
 
 
-def run_shell_command(command, allowed_binaries=None):
+def run_shell_command_result(command, allowed_binaries=None):
     try:
         tokens = _parse_command(command.strip(), allowed_binaries=allowed_binaries)
         builtin_result = _handle_builtin(tokens)
         if builtin_result is not None:
-            return builtin_result[:config.MAX_COMMAND_OUTPUT]
+            return OperationResult(True, builtin_result[:config.MAX_COMMAND_OUTPUT], category="builtin")
         _validate_subprocess_tokens(tokens)
     except Exception as e:
-        return str(e)
+        return OperationResult(False, str(e), category="validation")
+
+    if not _interactive_confirmation_available():
+        return OperationResult(
+            False,
+            "Confirmation-required shell command blocked while a background task is running. Re-run it directly from the CLI.",
+            category="confirmation",
+        )
 
     print(f"\nCommand requested:\n{' '.join(tokens)}\nWorking directory: {current_project_root()}")
     if input("Allow command? [y/N]: ").strip().lower() != "y":
-        return "Command cancelled."
+        return OperationResult(False, "Command cancelled.", category="cancelled")
 
     try:
         r = subprocess.run(tokens, cwd=str(current_project_root()), capture_output=True, text=True, timeout=120, shell=False)
         out = (r.stdout or "") + (("\nSTDERR:\n" + r.stderr) if r.stderr else "")
-        return out[:config.MAX_COMMAND_OUTPUT] or f"Command finished with code {r.returncode}"
+        return OperationResult(
+            r.returncode == 0,
+            out[:config.MAX_COMMAND_OUTPUT] or f"Command finished with code {r.returncode}",
+            code=r.returncode,
+            category="subprocess",
+        )
     except Exception as e:
-        return f"Command error: {e}"
+        return OperationResult(False, f"Command error: {e}", category="exception")
+
+
+def run_shell_command(command, allowed_binaries=None):
+    return run_shell_command_result(command, allowed_binaries=allowed_binaries).text()

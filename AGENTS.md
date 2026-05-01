@@ -10,3 +10,4 @@ Rules for AI agents working in this repository:
 - Ask before shell commands.
 - Do not run destructive commands.
 - Use `/snapshot` before large changes.
+- Don't execute apps with flask to test them 

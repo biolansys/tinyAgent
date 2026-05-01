@@ -226,6 +226,98 @@ class CliTests(unittest.TestCase):
         self.assertEqual("huggingface", state.provider_mode)
         state.save_project_session.assert_called_once()
 
+    def test_handle_prefixed_command_taskresume_prints_result(self):
+        state = make_state()
+        runtime = make_runtime()
+        runtime.resume_task = MagicMock(return_value="resumed")
+        with patch("builtins.print") as mock_print:
+            handled = cli.handle_prefixed_command("/taskresume 123", state, runtime)
+        self.assertTrue(handled)
+        runtime.resume_task.assert_called_once_with("123")
+        mock_print.assert_called_once_with("resumed")
+
+    def test_parse_taskretry_requires_task_id(self):
+        task_id, overrides, err = cli.parse_taskretry("")
+        self.assertIsNone(task_id)
+        self.assertIsNotNone(err)
+
+    def test_parse_taskretry_parses_overrides(self):
+        task_id, overrides, err = cli.parse_taskretry("abc --tooliters 40 --provider mistral --review off --safe")
+        self.assertIsNone(err)
+        self.assertEqual("abc", task_id)
+        self.assertEqual(40, overrides["max_tool_iterations"])
+        self.assertEqual("mistral", overrides["provider_mode"])
+        self.assertFalse(overrides["review_enabled"])
+        self.assertTrue(overrides["retry_safe_mode"])
+
+    def test_taskretry_applies_overrides_temporarily(self):
+        state = make_state()
+        runtime = make_runtime()
+        runtime.run_task = MagicMock(return_value="retry done")
+        state.provider_mode = "auto"
+        state.max_tool_iterations = 25
+        state.review_enabled = True
+        state.retry_safe_mode = False
+        checkpoint = {"user_input": "fix bug"}
+        with patch("openrouter_agent.cli.load_checkpoint", return_value=checkpoint):
+            result = cli.taskretry(runtime, state, "run1 --tooliters 40 --provider mistral --review off --safe")
+        self.assertEqual("retry done", result)
+        runtime.run_task.assert_called_once_with("fix bug")
+        self.assertEqual("auto", state.provider_mode)
+        self.assertEqual(25, state.max_tool_iterations)
+        self.assertTrue(state.review_enabled)
+        self.assertFalse(state.retry_safe_mode)
+
+    def test_handle_prefixed_command_taskretry_prints_result(self):
+        state = make_state()
+        runtime = make_runtime()
+        with patch("openrouter_agent.cli.taskretry", return_value="retried"), patch(
+            "builtins.print"
+        ) as mock_print:
+            handled = cli.handle_prefixed_command("/taskretry run1", state, runtime)
+        self.assertTrue(handled)
+        mock_print.assert_called_once_with("retried")
+
+    def test_handle_exact_command_runs_prints_rows(self):
+        state = make_state()
+        runtime = make_runtime()
+        with patch("openrouter_agent.cli.runs_text", return_value="Checkpointed runs"), patch(
+            "builtins.print"
+        ) as mock_print:
+            handled = cli.handle_exact_command("/runs", state, runtime)
+        self.assertTrue(handled)
+        mock_print.assert_called_once_with("Checkpointed runs")
+
+    def test_handle_prefixed_command_run_prints_checkpoint(self):
+        state = make_state()
+        runtime = make_runtime()
+        with patch("openrouter_agent.cli.load_checkpoint", return_value={"task_id": "run1"}), patch(
+            "builtins.print"
+        ) as mock_print:
+            handled = cli.handle_prefixed_command("/run run1", state, runtime)
+        self.assertTrue(handled)
+        mock_print.assert_called_once()
+
+    def test_handle_prefixed_command_runclear(self):
+        state = make_state()
+        runtime = make_runtime()
+        with patch("openrouter_agent.cli.delete_checkpoint", return_value=True), patch(
+            "builtins.print"
+        ) as mock_print:
+            handled = cli.handle_prefixed_command("/runclear run1", state, runtime)
+        self.assertTrue(handled)
+        mock_print.assert_called_once_with("Checkpoint deleted: run1")
+
+    def test_handle_exact_command_runclearall(self):
+        state = make_state()
+        runtime = make_runtime()
+        with patch("openrouter_agent.cli.clear_checkpoints", return_value=2), patch(
+            "builtins.print"
+        ) as mock_print:
+            handled = cli.handle_exact_command("/runclearall", state, runtime)
+        self.assertTrue(handled)
+        mock_print.assert_called_once_with("Deleted 2 checkpoint(s).")
+
     def test_apply_profile_supports_mistral(self):
         state = make_state()
         result = cli.apply_profile(state, "mistral")

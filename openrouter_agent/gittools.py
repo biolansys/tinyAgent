@@ -1,6 +1,7 @@
 import subprocess
 from . import config
 from .project_context import current_project_root
+from .results import OperationResult
 from .tools.files import safe_path
 
 
@@ -37,9 +38,13 @@ def _confirm_git_action(action):
     return input("Allow git action? [y/N]: ").strip().lower() == "y"
 
 
-def _run_git(args, require_repo=True):
+def _run_git_result(args, require_repo=True):
     if require_repo and not _project_has_own_git_repo():
-        return "Git command unavailable: the active project is not initialized as its own git repository."
+        return OperationResult(
+            False,
+            "Git command unavailable: the active project is not initialized as its own git repository.",
+            category="validation",
+        )
     try:
         result = subprocess.run(
             ["git"] + args,
@@ -51,16 +56,35 @@ def _run_git(args, require_repo=True):
         if result.returncode != 0:
             stderr = (result.stderr or "").strip()
             if "not a git repository" in stderr.lower():
-                return "Git command unavailable: this directory is not a git repository."
+                return OperationResult(
+                    False,
+                    "Git command unavailable: this directory is not a git repository.",
+                    code=result.returncode,
+                    category="validation",
+                )
             if "detected dubious ownership" in stderr.lower():
-                return _dubious_ownership_message(stderr)
+                return OperationResult(
+                    False,
+                    _dubious_ownership_message(stderr),
+                    code=result.returncode,
+                    category="validation",
+                )
         out = (result.stdout or "") + (("\nSTDERR:\n" + result.stderr) if result.stderr else "")
         text = out.strip()
         if text:
-            return text
-        return _empty_git_output_message(args, result.returncode)
+            return OperationResult(result.returncode == 0, text, code=result.returncode, category="git")
+        return OperationResult(
+            result.returncode == 0,
+            _empty_git_output_message(args, result.returncode),
+            code=result.returncode,
+            category="git",
+        )
     except Exception as e:
-        return f"Git command error: {e}"
+        return OperationResult(False, f"Git command error: {e}", category="exception")
+
+
+def _run_git(args, require_repo=True):
+    return _run_git_result(args, require_repo=require_repo).text()
 
 
 def _empty_git_output_message(args, returncode):

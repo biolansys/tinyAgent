@@ -12,6 +12,13 @@ class CompletedProcess:
 
 
 class GitToolsTests(unittest.TestCase):
+    def test_run_git_result_returns_structured_missing_repo_error(self):
+        with patch("openrouter_agent.gittools._project_has_own_git_repo", return_value=False):
+            result = gittools._run_git_result(["status", "--short", "--", "."])
+        self.assertFalse(result.ok)
+        self.assertEqual("validation", result.category)
+        self.assertIn("not initialized as its own git repository", result.message)
+
     def test_run_git_refuses_parent_repository_fallback(self):
         with patch("openrouter_agent.gittools._project_has_own_git_repo", return_value=False):
             result = gittools.git_status()

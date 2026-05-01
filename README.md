@@ -322,3 +322,5 @@ python -m unittest discover -s tests -v
 ```
 
 The current test suite covers CLI dispatch, project isolation, git helpers, shell safety, discovery, guidance, memory/history, and `/cmd` config behavior.
+
+Internally, the shell and git layers now use structured operation results while preserving the existing string-based CLI output. This keeps the current UX stable while making future error handling and reporting safer to extend.

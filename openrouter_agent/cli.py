@@ -17,6 +17,7 @@ from .indexer import build_code_index, search_code_index, index_stats, explain_i
 from .audit import audit_report, clear_audit, history_report, clear_history, task_detail
 from .gittools import git_status, git_files, git_diff, git_diff_cached, git_add, git_unstage, git_branch, git_commit, git_init, git_log, git_show, git_restore, git_commit_dry, git_safe_directory
 from .memory import load_memory, clear_memory, remember
+from .checkpoints import list_checkpoints, load_checkpoint, delete_checkpoint, clear_checkpoints
 from .project_context import (
     get_active_project,
     set_active_project,
@@ -107,6 +108,12 @@ COMMANDS = {
     "/history": "Show recent task history",
     "/historyclear": "Clear task history for active project",
     "/task ID": "Show task details",
+    "/taskresume ID": "Resume a checkpointed task by ID",
+    "/taskretry ID [--tooliters N] [--provider MODE] [--review on|off] [--safe|--force]": "Retry a task from checkpoint input with optional temporary overrides",
+    "/runs": "List checkpointed runs for the active project",
+    "/run ID": "Show checkpoint details for one run",
+    "/runclear ID": "Delete one run checkpoint",
+    "/runclearall": "Delete all run checkpoints for the active project",
     "/audit": "Show recent tool audit log",
     "/auditclear": "Clear tool audit log",
     "/memory": "Show project memory",
@@ -156,7 +163,8 @@ HELP_SECTIONS = [
     ]),
     ("Memory And History", [
         "/memory", "/memoryclear", "/memorynote TEXT", "/cmdhistory", "/history", "/historyclear",
-        "/task ID", "/audit", "/auditclear",
+        "/task ID", "/taskresume ID", "/taskretry ID [--tooliters N] [--provider MODE] [--review on|off] [--safe|--force]",
+        "/runs", "/run ID", "/runclear ID", "/runclearall", "/audit", "/auditclear",
     ]),
     ("Guidance", [
         "/guidance", "/reloadguidance",
@@ -173,7 +181,6 @@ PROFILES = {
     "huggingface": {"tooliters": 25, "auto_rounds": 3, "provider": "huggingface"},
     "mistral": {"tooliters": 25, "auto_rounds": 3, "provider": "mistral"},
 }
-
 
 def print_help():
     section_map = {title: [(cmd, COMMANDS[cmd]) for cmd in commands if cmd in COMMANDS] for title, commands in HELP_SECTIONS}
@@ -258,6 +265,95 @@ def command_history_text(state):
         lines.append(f"{i:>2}. {command}")
     return "\n".join(lines)
 
+def runs_text():
+    rows = list_checkpoints()
+    if not rows:
+        return "No checkpoints found."
+    lines = ["Checkpointed runs:"]
+    for row in rows:
+        lines.append(
+            f"{row.get('task_id')} | status={row.get('status')} | phase={row.get('phase')} | "
+            f"next_step={row.get('next_step_index')} | updated={row.get('updated_at')}"
+        )
+    return "\n".join(lines)
+
+
+def parse_taskretry(spec):
+    parts = str(spec or "").split()
+    if not parts:
+        return None, None, "Usage: /taskretry ID [--tooliters N] [--provider MODE] [--review on|off] [--safe|--force]"
+    task_id = parts[0].strip()
+    if not task_id:
+        return None, None, "Usage: /taskretry ID [--tooliters N] [--provider MODE] [--review on|off] [--safe|--force]"
+
+    overrides = {"retry_safe_mode": False}
+    i = 1
+    while i < len(parts):
+        flag = parts[i]
+        if flag == "--tooliters":
+            if i + 1 >= len(parts):
+                return None, None, "Missing value for --tooliters"
+            try:
+                overrides["max_tool_iterations"] = int(parts[i + 1])
+            except Exception:
+                return None, None, "Invalid integer for --tooliters"
+            i += 2
+            continue
+        if flag == "--provider":
+            if i + 1 >= len(parts):
+                return None, None, "Missing value for --provider"
+            overrides["provider_mode"] = parts[i + 1].strip()
+            i += 2
+            continue
+        if flag == "--review":
+            if i + 1 >= len(parts):
+                return None, None, "Missing value for --review"
+            overrides["review_enabled"] = set_bool(parts[i + 1].strip())
+            i += 2
+            continue
+        if flag == "--safe":
+            overrides["retry_safe_mode"] = True
+            i += 1
+            continue
+        if flag == "--force":
+            overrides["retry_safe_mode"] = False
+            i += 1
+            continue
+        return None, None, f"Unknown option: {flag}"
+
+    return task_id, overrides, None
+
+
+def taskretry(runtime, state, spec):
+    task_id, overrides, err = parse_taskretry(spec)
+    if err:
+        return err
+    checkpoint = load_checkpoint(task_id)
+    if not checkpoint:
+        return f"No checkpoint found for task: {task_id}"
+    user_input = checkpoint.get("user_input", "")
+    if not str(user_input).strip():
+        return f"Checkpoint for task {task_id} has no retryable input."
+
+    old_provider = state.provider_mode
+    old_tooliters = state.max_tool_iterations
+    old_review = state.review_enabled
+    old_retry_safe_mode = getattr(state, "retry_safe_mode", False)
+    try:
+        if "provider_mode" in overrides:
+            state.provider_mode = overrides["provider_mode"]
+        if "max_tool_iterations" in overrides:
+            state.max_tool_iterations = overrides["max_tool_iterations"]
+        if "review_enabled" in overrides:
+            state.review_enabled = overrides["review_enabled"]
+        state.retry_safe_mode = bool(overrides.get("retry_safe_mode", False))
+        return runtime.run_task(user_input)
+    finally:
+        state.provider_mode = old_provider
+        state.max_tool_iterations = old_tooliters
+        state.review_enabled = old_review
+        state.retry_safe_mode = old_retry_safe_mode
+
 
 def prompt_history_available():
     return readline is not None
@@ -296,6 +392,10 @@ def append_prompt_history(command):
         return True
     except Exception:
         return False
+
+
+def read_user_input(prompt_text):
+    return input(prompt_text)
 
 
 def active_cmd_commands():
@@ -714,6 +814,13 @@ def handle_exact_command(user_input, state, runtime):
     if user_input == "/memoryclear":
         print(clear_memory())
         return True
+    if user_input == "/runs":
+        print(runs_text())
+        return True
+    if user_input == "/runclearall":
+        count = clear_checkpoints()
+        print(f"Deleted {count} checkpoint(s).")
+        return True
     if user_input == "/usage":
         print(json.dumps(state.usage, indent=2))
         return True
@@ -938,6 +1045,27 @@ def handle_prefixed_command(user_input, state, runtime):
     if user_input.startswith("/task "):
         print(task_detail(user_input.split(" ", 1)[1].strip()))
         return True
+    if user_input.startswith("/taskresume "):
+        print(runtime.resume_task(user_input.split(" ", 1)[1].strip()))
+        return True
+    if user_input.startswith("/taskretry "):
+        print(taskretry(runtime, state, user_input.split(" ", 1)[1].strip()))
+        return True
+    if user_input.startswith("/run "):
+        task_id = user_input.split(" ", 1)[1].strip()
+        data = load_checkpoint(task_id)
+        if not data:
+            print(f"No checkpoint found for task: {task_id}")
+        else:
+            print(json.dumps(data, indent=2, ensure_ascii=False))
+        return True
+    if user_input.startswith("/runclear "):
+        task_id = user_input.split(" ", 1)[1].strip()
+        if delete_checkpoint(task_id):
+            print(f"Checkpoint deleted: {task_id}")
+        else:
+            print(f"No checkpoint found for task: {task_id}")
+        return True
     if user_input.startswith("/memorynote "):
         print(remember(user_input.split(" ", 1)[1].strip()))
         return True
@@ -981,7 +1109,7 @@ def main():
     ui.info("Initialization complete. Type /help to start.")
 
     while True:
-        user_input = input(ui.cyan(f"You ({state.active_project}): ")).strip()
+        user_input = read_user_input(ui.cyan(f"You ({state.active_project}): ")).strip()
         if not user_input:
             continue
 
