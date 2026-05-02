@@ -1,0 +1,58 @@
+{
+  "plugins": [
+    {
+      "name": "sample",
+      "module": "plugins.sample_plugin",
+      "priority": 50,
+      "capabilities": ["project_hooks", "task_hooks"],
+      "commands": [
+        {
+          "name": "/pluginping",
+          "description": "Sample plugin health command",
+          "handler": "plugin_ping"
+        }
+      ],
+      "hooks": [
+        {
+          "name": "on_project_created",
+          "handler": "on_project_created"
+        },
+        {
+          "name": "before_task",
+          "handler": "before_task"
+        },
+        {
+          "name": "after_task",
+          "handler": "after_task"
+        }
+      ]
+    },
+    {
+      "name": "example-policy",
+      "module": "plugins.example_policy_plugin",
+      "priority": 20,
+      "capabilities": ["project_hooks", "task_hooks"],
+      "commands": [
+        {
+          "name": "/policystatus",
+          "description": "Show policy plugin status",
+          "handler": "command_status"
+        }
+      ],
+      "hooks": [
+        {
+          "name": "on_project_created",
+          "handler": "on_project_created"
+        },
+        {
+          "name": "before_task",
+          "handler": "before_task"
+        },
+        {
+          "name": "after_task",
+          "handler": "after_task"
+        }
+      ]
+    }
+  ]
+}

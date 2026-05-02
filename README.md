@@ -54,6 +54,7 @@ You (app1):
 - per-project isolation inside `workspace/`
 - per-project session persistence
 - per-project `AGENTS.md` guidance support
+- plugin commands and lifecycle hooks via `plugins.json`
 - code index and search
 - git helpers scoped to the active project repo
 - configurable `/cmd` commands from JSON
@@ -92,6 +93,8 @@ python main.py
 - `workspace/.active_project.json`: saved active project
 - `workspace/<project>/.agent_session.json`: per-project session settings
 - `workspace/<project>/AGENTS.md`: optional project-local guidance
+- `plugins.json`: plugin manifest (commands + hooks + capabilities + priority)
+- `plugins/*.py`: plugin modules
 
 ## `/cmd` Configuration
 
@@ -141,7 +144,9 @@ Notes:
 /dashboard
 /usage
 /verbose LEVEL
+/temperature N
 /clear
+/restart
 /exit
 ```
 
@@ -220,6 +225,7 @@ Notes:
 ```text
 /subagents
 /asksubagent ROLE PROMPT [--file FILE] [--task ID] [--no-task] [--preview]
+/runplan [FILE]
 /explain FILE
 /reviewfile FILE
 /refactor FILE
@@ -228,6 +234,8 @@ Notes:
 ```
 
 `/asksubagent` includes the latest task context from the active project by default, and you can override it with `--task ID` or disable it with `--no-task`. The `worker` role accepts `--file FILE` for single-file work or `--scope PATH` for a bounded directory scope, and it returns a JSON patch payload that only applies inside that scope.
+
+`/runplan` executes `/asksubagent` commands from a Markdown file. If no filename is provided, it defaults to `RUNPLAN.md`. The app asks for confirmation before execution.
 
 ### Git
 
@@ -293,6 +301,7 @@ The startup/dashboard view also shows project-specific visibility details such a
 ```text
 /guidance
 /reloadguidance
+/plugins
 ```
 
 Guidance is loaded from:
@@ -300,6 +309,23 @@ Guidance is loaded from:
 - repo-level `AGENTS.md`
 - `SKILL/**/SKILLS.md`
 - active-project `workspace/<project>/AGENTS.md`
+
+## Plugins
+
+Plugins are loaded at startup from `plugins.json`.
+
+Current plugin support includes:
+
+- slash commands (for example `/pluginping`, `/policystatus`)
+- lifecycle hooks: `on_project_created`, `before_task`, `after_task`
+- hook priority (lower runs first)
+- capability checks:
+  - `project_hooks` for `on_project_created`
+  - `task_hooks` for `before_task` and `after_task`
+
+Use `/plugins` to inspect loaded plugin commands, hook registrations, and loader errors.
+
+After changing plugin code or `plugins.json`, use `/restart`.
 
 ## Discovery And Ranking
 

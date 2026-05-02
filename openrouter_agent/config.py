@@ -10,10 +10,12 @@ LOG_DIR = (ROOT / "logs").resolve()
 BACKUP_DIR = (ROOT / "backups").resolve()
 SNAPSHOT_DIR = (ROOT / "snapshots").resolve()
 SKILL_DIR = (ROOT / "SKILL").resolve()
+PLUGIN_DIR = (ROOT / "plugins").resolve()
+PLUGIN_MANIFEST_FILE = ROOT / "plugins.json"
 MEMORY_FILE = WORKSPACE / ".agent_memory.json"
 CMD_COMMANDS_FILE = ROOT / ".cmd_commands.json"
 
-for d in [WORKSPACE, LOG_DIR, BACKUP_DIR, SNAPSHOT_DIR, SKILL_DIR]:
+for d in [WORKSPACE, LOG_DIR, BACKUP_DIR, SNAPSHOT_DIR, SKILL_DIR, PLUGIN_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"

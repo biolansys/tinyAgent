@@ -8,6 +8,7 @@ from ..ui import console as ui
 from ..audit import new_task_id, log_task_start, log_task_plan, log_task_end, log_tool_call
 from ..checkpoints import save_checkpoint, load_checkpoint
 from ..tools.files import normalize_agent_path
+from ..plugins import get_plugin_manager
 
 DRY_RUN_TOOLS = {"write_text_file", "replace_in_file", "patch_lines", "create_requirements", "run_shell_command"}
 MUTATING_TOOLS = {
@@ -246,6 +247,20 @@ class AgentRuntime:
         return len(steps) >= 3 or risk in {"medium", "high"}
 
     def run_task(self, user_input):
+        plugin_manager = get_plugin_manager()
+        before = plugin_manager.emit_hook(
+            "before_task",
+            {
+                "user_input": user_input,
+                "active_project": getattr(self.state, "active_project", ""),
+            },
+        )
+        for warn in before.get("warnings", []):
+            ui.warn(f"Plugin hook warning: {warn}")
+        if before.get("blocked"):
+            return f"Task blocked by plugin hook: {before.get('reason', 'blocked')}"
+        user_input = str(before.get("updates", {}).get("user_input", user_input))
+
         self.current_task_id = new_task_id()
         self.reset_messages()
         log_task_start(self.current_task_id, user_input)
@@ -296,6 +311,17 @@ class AgentRuntime:
             "step_outputs": result.split("\n\n") if result else [],
             "result_preview": str(result)[:4000],
         })
+        after = plugin_manager.emit_hook(
+            "after_task",
+            {
+                "user_input": user_input,
+                "active_project": getattr(self.state, "active_project", ""),
+                "task_id": self.current_task_id,
+                "result": str(result),
+            },
+        )
+        for warn in after.get("warnings", []):
+            ui.warn(f"Plugin hook warning: {warn}")
         return result
 
     def resume_task(self, task_id):

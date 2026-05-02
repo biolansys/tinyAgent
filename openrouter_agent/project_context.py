@@ -3,6 +3,7 @@ import shutil
 import subprocess
 from pathlib import Path
 from . import config
+from .plugins import get_plugin_manager
 
 DEFAULT_PROJECT = "default"
 _active_project = None
@@ -109,6 +110,10 @@ def create_project(name: str) -> str:
     root = ensure_project(name)
     if is_new:
         _initialize_new_project(root)
+        get_plugin_manager().emit_hook(
+            "on_project_created",
+            {"project_name": root.name, "project_root": str(root)},
+        )
     _active_project = root.name
     _save_active_project(_active_project)
     return _active_project

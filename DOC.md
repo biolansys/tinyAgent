@@ -252,3 +252,281 @@ Expected output by step:
 - second `worker`: create the system info module with a bounded patch.
 - third `worker`: create the UI module with a bounded patch.
 - final `review`: check the finished code for bugs, layout issues, and code quality.
+
+## Plugin Hooks
+
+Plugin hooks are predefined lifecycle points where plugins can run automatically, instead of adding behavior directly in core files such as `cli.py`.
+
+### Why Hooks
+
+- Extend functionality without modifying core command flow.
+- Keep custom behaviors isolated per plugin.
+- Add guardrails, automation, and telemetry with controlled scope.
+
+### Recommended Hook Points
+
+1. `on_startup`
+   Runs once at app boot.
+   Use for initialization, environment checks, and dynamic registration.
+
+2. `on_project_created`
+   Runs after `/projectnew`.
+   Use for scaffolding such as `README.md`, `tests/`, `logs/`, or template files.
+
+3. `on_project_switched`
+   Runs after `/project NAME`.
+   Use for project-local settings load and cache refresh.
+
+4. `before_command`
+   Runs before slash-command execution.
+   Use for policy checks, denylist/allowlist logic, and argument normalization.
+
+5. `after_command`
+   Runs after slash-command execution.
+   Use for audit logging and notifications.
+
+6. `before_task`
+   Runs before free-form task execution.
+   Use to enforce preconditions (for example required files) or inject safe context.
+
+7. `after_task`
+   Runs after task completion/failure.
+   Use to summarize outputs, run post-checks, and write task metrics.
+
+8. `before_tool_call`
+   Runs before a tool call.
+   Use to block unsafe arguments or out-of-scope paths.
+
+9. `after_tool_call`
+   Runs after a tool call.
+   Use for output inspection and metrics.
+
+10. `on_shutdown`
+    Runs during `/exit` or `/restart`.
+    Use to flush plugin state and close resources.
+
+### Execution Model
+
+1. Core creates a hook context (project, command/task/tool metadata).
+2. Core emits a hook event (example: `before_task`).
+3. Enabled plugin handlers run in deterministic order.
+4. Returned decisions are applied to continue, mutate, warn, or block.
+
+### Hook Return Contract
+
+Use a strict response format so behavior stays predictable:
+
+- `{"action":"continue"}`
+- `{"action":"mutate","updates":{...}}`
+- `{"action":"warn","message":"..."}`
+- `{"action":"block","reason":"..."}`
+- `{"action":"error","reason":"..."}`
+
+### Ordering and Priority
+
+- Each plugin hook handler should define `priority` (lower runs first).
+- Ordering must be deterministic.
+- For safety hooks, first valid `block` should stop execution.
+- For mutable fields, define merge strategy (for example last-write-wins).
+
+### Safety Controls
+
+- Timeout per hook call.
+- Exception isolation per plugin.
+- Fail-open vs fail-closed policy per hook type.
+- Capability permissions per plugin (for example `can_block_commands`, `can_mutate_prompt`).
+- Audit log for hook decisions.
+
+### Context Design
+
+A hook context should include at least:
+
+- `hook_name`
+- `timestamp`
+- `project`
+- `command` or `user_input`
+- `task_id` (when available)
+- `tool_name` and `tool_args` (tool hooks)
+- `metadata` (provider, route, dry-run, etc.)
+- `api_version`
+
+### Practical Examples
+
+1. `on_project_created`:
+   Ensure `README.md`, `tests/`, and `logs/` exist.
+
+2. `before_task`:
+   Block task if `README.md` is missing.
+
+3. `before_tool_call`:
+   Block shell/file operations outside project scope.
+
+4. `after_task`:
+   Append summary to `logs/task_summary.jsonl`.
+
+### Testing Hooks
+
+- Unit test each hook return contract.
+- Integration test lifecycle execution points.
+- Add fault tests for timeout, exception, and conflicting mutations.
+- Verify deterministic ordering and priority behavior.
+
+### Versioning
+
+- Include hook API version in plugin manifest.
+- Validate compatibility at plugin load time.
+- Keep a deprecation window for breaking changes.
+
+## How To Create And Add A Plugin
+
+This app loads plugins from `plugins.json` and Python modules under `plugins/`.
+
+### 1) Decide Plugin Scope
+
+Define exactly what the plugin should do:
+
+- Add one or more slash commands.
+- React to lifecycle hooks (`on_project_created`, `before_task`, `after_task`).
+- Enforce policy (block/warn/mutate).
+- Log or scaffold files.
+
+Keep the first version narrow and testable.
+
+### 2) Create The Plugin Module
+
+Create a Python file in `plugins/`, for example:
+
+- `plugins/my_plugin.py`
+
+A plugin command handler signature:
+
+```python
+def my_command(args="", state=None, runtime=None):
+    return "ok"
+```
+
+A hook handler signature:
+
+```python
+def before_task(context=None, plugin=""):
+    # return one of: continue, mutate, warn, block
+    return {"action": "continue"}
+```
+
+### 3) Implement Command Handlers
+
+Command handlers are invoked when the user types the registered slash command.
+
+- `args`: command tail text after the command name.
+- `state`: runtime state object (active project, settings, etc.).
+- `runtime`: agent runtime object.
+
+Return a short string (or `None`) for CLI output.
+
+### 4) Implement Hook Handlers
+
+Supported first-hook set:
+
+- `on_project_created`
+- `before_task`
+- `after_task`
+
+Hook return contract:
+
+- `{"action":"continue"}`
+- `{"action":"warn","message":"..."}`
+- `{"action":"mutate","updates":{"user_input":"..."}}`
+- `{"action":"block","reason":"..."}`
+
+Notes:
+
+- `before_task` can block or mutate incoming task text.
+- `after_task` runs after task completion and is suitable for logging.
+- `on_project_created` is suitable for project scaffolding.
+
+### 5) Register Plugin In `plugins.json`
+
+Add an entry under `"plugins"` with:
+
+- `name`: plugin id
+- `module`: Python import path
+- `priority`: lower number runs first for hooks
+- `capabilities`: required permissions for hooks
+- `commands`: slash-command registrations
+- `hooks`: lifecycle hook registrations
+
+Example:
+
+```json
+{
+  "name": "my-plugin",
+  "module": "plugins.my_plugin",
+  "priority": 30,
+  "capabilities": ["project_hooks", "task_hooks"],
+  "commands": [
+    {
+      "name": "/mystatus",
+      "description": "Show plugin status",
+      "handler": "status_command"
+    }
+  ],
+  "hooks": [
+    { "name": "on_project_created", "handler": "on_project_created" },
+    { "name": "before_task", "handler": "before_task" },
+    { "name": "after_task", "handler": "after_task" }
+  ]
+}
+```
+
+### 6) Capabilities And Validation
+
+Current capability checks:
+
+- `on_project_created` requires `project_hooks`
+- `before_task` and `after_task` require `task_hooks`
+
+If capability is missing, the hook is rejected and shown as loader error.
+
+### 7) Load And Verify
+
+Plugins are loaded at app startup.
+
+After editing plugin files or `plugins.json`:
+
+1. Restart app with `/restart`
+2. Run `/plugins`
+3. Confirm command and hook registrations
+4. Check plugin loader errors section is empty
+
+### 8) Test End To End
+
+Recommended checks:
+
+1. Command path:
+   Run plugin command (example: `/mystatus`) and verify output.
+2. Project hook:
+   Create a new project and verify scaffolding side effects.
+3. Task hooks:
+   Run a normal task, then a blocked/mutated test case.
+4. Logging:
+   Confirm expected log file writes.
+
+### 9) Safety Guidelines
+
+- Keep hooks fast and deterministic.
+- Avoid long blocking work inside hooks.
+- Always handle malformed `context` safely.
+- Use `block` only for clear policy violations.
+- Prefer `warn` for advisory behavior.
+- Keep file writes inside active project scope unless explicitly required.
+
+### 10) Typical Development Loop
+
+1. Edit `plugins/<name>.py`
+2. Update `plugins.json`
+3. `/restart`
+4. `/plugins`
+5. Run command + hook scenarios
+6. Add/update tests in `tests/`
+7. Run test suite
+8. Commit once behavior is stable

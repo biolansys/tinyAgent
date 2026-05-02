@@ -24,6 +24,7 @@ from .gittools import git_status, git_files, git_diff, git_diff_cached, git_add,
 from .memory import load_memory, clear_memory, remember
 from .checkpoints import list_checkpoints, load_checkpoint, delete_checkpoint, clear_checkpoints
 from .subagents import run_subagent, SUBAGENT_ROLES, build_subagent_context
+from .plugins import get_plugin_manager
 from .project_context import (
     get_active_project,
     set_active_project,
@@ -86,6 +87,7 @@ COMMANDS = {
     "/projectpath": "Show active project path",
     "/guidance": "Show AGENTS.md + SKILL guidance",
     "/reloadguidance": "Reload AGENTS.md + SKILL guidance",
+    "/plugins": "Show loaded plugins and plugin loader errors",
     "/index": "Build or refresh active project code index",
     "/indexstats": "Show code index statistics",
     "/searchcode QUERY": "Search code index",
@@ -138,6 +140,8 @@ COMMANDS = {
     "/exit": "Exit app",
 }
 
+PLUGIN_MANAGER = get_plugin_manager()
+
 HELP_SECTIONS = [
     ("General", [
         "/help", "/dashboard", "/usage", "/verbose LEVEL", "/temperature N", "/clear", "/restart", "/exit",
@@ -179,6 +183,9 @@ HELP_SECTIONS = [
     ]),
     ("Guidance", [
         "/guidance", "/reloadguidance",
+    ]),
+    ("Plugins", [
+        "/plugins",
     ]),
 ]
 
@@ -307,6 +314,30 @@ def subagent_result_text(result):
             lines.append("")
         lines.append(content)
     return "\n".join(lines) or "No subagent output."
+
+
+def plugins_text():
+    lines = ["Loaded plugin commands:"]
+    if PLUGIN_MANAGER.commands:
+        for name, command in sorted(PLUGIN_MANAGER.commands.items()):
+            lines.append(f"- {name}: {command.description} (plugin={command.plugin_name})")
+    else:
+        lines.append("- none")
+    lines.append("")
+    lines.append("Loaded plugin hooks:")
+    if PLUGIN_MANAGER.hooks:
+        for hook_name, hook_items in sorted(PLUGIN_MANAGER.hooks.items()):
+            lines.append(f"- {hook_name}:")
+            for hook in hook_items:
+                lines.append(f"  - plugin={hook.plugin_name} priority={hook.priority}")
+    else:
+        lines.append("- none")
+    if PLUGIN_MANAGER.errors:
+        lines.append("")
+        lines.append("Plugin loader errors:")
+        for err in PLUGIN_MANAGER.errors:
+            lines.append(f"- {err}")
+    return "\n".join(lines)
 
 
 def run_plan_file(runtime, state, path):
@@ -1273,6 +1304,9 @@ def handle_exact_command(user_input, state, runtime):
         runtime.reset_messages()
         ui.success("Guidance reloaded.")
         return True
+    if user_input == "/plugins":
+        print(plugins_text())
+        return True
     if user_input == "/clear":
         runtime.reset_messages()
         ui.info("Conversation memory cleared.")
@@ -1663,6 +1697,11 @@ def handle_prefixed_command(user_input, state, runtime):
 
 
 def handle_command(user_input, state, runtime):
+    handled, result = PLUGIN_MANAGER.run(user_input, state, runtime)
+    if handled:
+        if result is not None and str(result).strip():
+            print(result)
+        return True
     return handle_exact_command(user_input, state, runtime) or handle_prefixed_command(user_input, state, runtime)
 
 
@@ -1674,6 +1713,8 @@ def restart_app():
 
 def main():
     ensure_guidance_files()
+    PLUGIN_MANAGER.load_manifest(config.PLUGIN_MANIFEST_FILE)
+    COMMANDS.update(PLUGIN_MANAGER.get_help_entries())
     state = AgentState()
     state.active_project = get_active_project()
     state.load_project_session()

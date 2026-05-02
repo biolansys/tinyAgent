@@ -348,7 +348,7 @@ class CliTests(unittest.TestCase):
                 "\n"
                 "/asksubagent review \"Review the design.\"\n"
             ),
-        ), patch("openrouter_agent.cli.handle_prefixed_command", return_value=True) as mock_handle, patch(
+        ), patch("builtins.input", return_value="y"), patch("openrouter_agent.cli.handle_prefixed_command", return_value=True) as mock_handle, patch(
             "openrouter_agent.cli.ui.panel"
         ) as mock_panel:
             result = cli.run_plan_file(runtime, state, "workspace/alpha/subagent_plan.md")
@@ -360,7 +360,7 @@ class CliTests(unittest.TestCase):
     def test_run_plan_file_rejects_non_subagent_lines(self):
         state = make_state()
         runtime = make_runtime()
-        with patch("openrouter_agent.cli.read_text_file", return_value="/help\n"):
+        with patch("builtins.input", return_value="y"), patch("openrouter_agent.cli.read_text_file", return_value="/help\n"):
             result = cli.run_plan_file(runtime, state, "workspace/alpha/subagent_plan.md")
         self.assertIn("Plan file can only contain /asksubagent commands.", result)
 
