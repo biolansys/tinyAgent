@@ -62,13 +62,22 @@ You (app1):
 
 ## Setup
 
+### Prerequisites
+
+- Python 3.11+
+- `git` available in PATH
+
+### Install dependencies
+
 ```bash
 python -m venv .venv
 .venv\Scripts\activate
 python -m pip install -r requirements.txt
 ```
 
-Create `.env`:
+### Configure environment
+
+Create `.env` in the repo root:
 
 ```env
 OPENROUTER_API_KEY=your_openrouter_key
@@ -80,8 +89,19 @@ MISTRAL_MODELS=mistral-small-latest,codestral-latest
 
 ## Run
 
+### Start the app
+
 ```bash
 python main.py
+```
+
+### First commands after startup
+
+```text
+/help
+/projects
+/projectnew myproject
+/plugins
 ```
 
 ## Important Files
