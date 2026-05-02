@@ -218,12 +218,16 @@ Notes:
 ### Agent Tasks
 
 ```text
+/subagents
+/asksubagent ROLE PROMPT [--file FILE] [--task ID] [--no-task] [--preview]
 /explain FILE
 /reviewfile FILE
 /refactor FILE
 /fix TEXT
 /tests
 ```
+
+`/asksubagent` includes the latest task context from the active project by default, and you can override it with `--task ID` or disable it with `--no-task`. The `worker` role accepts `--file FILE` for single-file work or `--scope PATH` for a bounded directory scope, and it returns a JSON patch payload that only applies inside that scope.
 
 ### Git
 

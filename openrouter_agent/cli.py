@@ -1,6 +1,9 @@
 import json
 import difflib
 import shlex
+import os
+import sys
+from datetime import datetime
 try:
     import readline
 except Exception:
@@ -20,6 +23,7 @@ from .audit import audit_report, clear_audit, history_report, clear_history, tas
 from .gittools import git_status, git_files, git_diff, git_diff_cached, git_add, git_unstage, git_branch, git_commit, git_init, git_log, git_show, git_restore, git_commit_dry, git_safe_directory
 from .memory import load_memory, clear_memory, remember
 from .checkpoints import list_checkpoints, load_checkpoint, delete_checkpoint, clear_checkpoints
+from .subagents import run_subagent, SUBAGENT_ROLES, build_subagent_context
 from .project_context import (
     get_active_project,
     set_active_project,
@@ -86,6 +90,8 @@ COMMANDS = {
     "/indexstats": "Show code index statistics",
     "/searchcode QUERY": "Search code index",
     "/edit FILE [--instruction TEXT] [--preview]": "Guided edit loop for one file with diff + confirm",
+    "/asksubagent ROLE PROMPT [--file FILE] [--task ID] [--no-task] [--preview]": "Run a specialist subagent; worker requires a file",
+    "/runplan [FILE]": "Run a Markdown plan file containing /asksubagent commands (default: RUNPLAN.md)",
     "/explain FILE": "Explain a file using the agent",
     "/reviewfile FILE": "Review a file using the agent",
     "/refactor FILE": "Ask agent for safe refactor suggestions",
@@ -126,13 +132,15 @@ COMMANDS = {
     "/ranking": "Show self-optimizing model ranking report",
     "/resetranking": "Reset model ranking statistics",
     "/verbose LEVEL": "Set verbosity level: 0 quiet, 1 normal, 2 detailed, 3 debug",
+    "/temperature N": "Set model temperature: 0.0 deterministic, 1.0 creative",
     "/clear": "Clear conversation memory",
+    "/restart": "Restart app",
     "/exit": "Exit app",
 }
 
 HELP_SECTIONS = [
     ("General", [
-        "/help", "/dashboard", "/usage", "/verbose LEVEL", "/clear", "/exit",
+        "/help", "/dashboard", "/usage", "/verbose LEVEL", "/temperature N", "/clear", "/restart", "/exit",
     ]),
     ("Projects", [
         "/projects", "/project NAME", "/projectnew NAME", "/projectclone SRC DEST",
@@ -157,7 +165,7 @@ HELP_SECTIONS = [
         "/index", "/indexstats", "/searchcode QUERY",
     ]),
     ("Agent Tasks", [
-        "/edit FILE [--instruction TEXT] [--preview]", "/explain FILE", "/reviewfile FILE", "/refactor FILE", "/fix TEXT", "/tests",
+        "/edit FILE [--instruction TEXT] [--preview]", "/asksubagent ROLE PROMPT [--file FILE] [--task ID] [--no-task] [--preview]", "/runplan [FILE]", "/explain FILE", "/reviewfile FILE", "/refactor FILE", "/fix TEXT", "/tests",
     ]),
     ("Git", [
         "/gitstatus", "/gitfiles", "/gitdiff", "/gitdiffcached", "/gitadd", "/gitunstage",
@@ -281,6 +289,60 @@ def runs_text():
     return "\n".join(lines)
 
 
+def subagents_text():
+    return "Available subagents: " + ", ".join(SUBAGENT_ROLES)
+
+
+def subagent_result_text(result):
+    if not isinstance(result, dict):
+        return str(result)
+    lines = []
+    for key in ("role", "route", "provider", "model"):
+        value = result.get(key)
+        if value:
+            lines.append(f"{key.title()}: {value}")
+    content = str(result.get("content", "")).strip()
+    if content:
+        if lines:
+            lines.append("")
+        lines.append(content)
+    return "\n".join(lines) or "No subagent output."
+
+
+def run_plan_file(runtime, state, path):
+    from .tools.files import normalize_agent_path
+
+    selected_path = (path or "").strip() or "RUNPLAN.md"
+    plan_path = normalize_agent_path(selected_path)
+    if input(ui.cyan(f"Confirm run plan file '{plan_path}'? [y/N]: ")).strip().lower() != "y":
+        return "Run plan cancelled."
+
+    content = read_text_file(plan_path)
+    if content.startswith(("File does not", "Access denied", "File too large")):
+        return content
+
+    lines = []
+    executed = 0
+    for raw_line in content.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if not line.startswith("/asksubagent "):
+            return f"Plan file can only contain /asksubagent commands.\nInvalid line: {line}"
+        lines.append(line)
+
+    if not lines:
+        return f"No runnable commands found in plan file: {plan_path}"
+
+    for index, line in enumerate(lines, start=1):
+        ui.panel(f"{index}. {line}", title="Run Plan Step", style="cyan")
+        if not handle_prefixed_command(line, state, runtime):
+            return f"Plan execution stopped at step {index}: {line}"
+        executed += 1
+
+    return f"Plan completed. Executed {executed} subagent command(s)."
+
+
 def parse_edit_spec(spec):
     tokens = shlex.split(str(spec or ""), posix=True)
     if not tokens:
@@ -308,6 +370,65 @@ def parse_edit_spec(spec):
 
     instruction = " ".join(instruction_parts).strip() or None
     return target, instruction, preview, None
+
+
+def parse_asksubagent_spec(spec):
+    tokens = shlex.split(str(spec or ""), posix=True)
+    if len(tokens) < 2:
+        return None, None, None, None, None, None, False, "Usage: /asksubagent ROLE PROMPT [--file FILE|--scope PATH] [--task ID] [--no-task] [--preview]"
+
+    role = tokens[0].strip()
+    if not role or role.startswith("--"):
+        return None, None, None, None, None, None, False, "Usage: /asksubagent ROLE PROMPT [--file FILE|--scope PATH] [--task ID] [--no-task] [--preview]"
+
+    prompt_parts = []
+    task_id = None
+    include_task_context = True
+    target_file = None
+    scope_path = None
+    preview = False
+    i = 1
+    while i < len(tokens):
+        token = tokens[i]
+        if token == "--no-task":
+            include_task_context = False
+            i += 1
+            continue
+        if token == "--preview":
+            preview = True
+            i += 1
+            continue
+        if token == "--task":
+            if i + 1 >= len(tokens):
+                return None, None, None, None, None, None, False, "Missing value for --task"
+            task_id = tokens[i + 1].strip()
+            i += 2
+            continue
+        if token == "--file":
+            if i + 1 >= len(tokens):
+                return None, None, None, None, None, None, False, "Missing value for --file"
+            target_file = tokens[i + 1].strip()
+            i += 2
+            continue
+        if token == "--scope":
+            if i + 1 >= len(tokens):
+                return None, None, None, None, None, None, False, "Missing value for --scope"
+            scope_path = tokens[i + 1].strip()
+            i += 2
+            continue
+        if token.startswith("--"):
+            return None, None, None, None, None, None, False, f"Unknown option: {token}"
+        prompt_parts.append(token)
+        i += 1
+
+    prompt = " ".join(prompt_parts).strip()
+    if not prompt:
+        return None, None, None, None, None, None, False, "Usage: /asksubagent ROLE PROMPT [--file FILE|--scope PATH] [--task ID] [--no-task] [--preview]"
+    if role.lower() == "worker" and not (target_file or scope_path):
+        return None, None, None, None, None, None, False, "Worker subagent requires --file FILE or --scope PATH"
+    if role.lower() != "worker" and scope_path:
+        return None, None, None, None, None, None, False, "--scope is only valid for the worker subagent"
+    return role, prompt, task_id, include_task_context, target_file, scope_path, preview, None
 
 
 def run_edit_file(runtime, path):
@@ -375,6 +496,303 @@ def run_edit_file(runtime, path):
         write_text_file(target_norm, restore)
         return "Changes rolled back."
     return "Changes kept."
+
+
+def strip_markdown_fences(text):
+    content = str(text or "").strip()
+    if not content.startswith("```"):
+        return content
+    lines = content.splitlines()
+    if len(lines) < 3:
+        return content
+    if not lines[-1].strip().startswith("```"):
+        return content
+    return "\n".join(lines[1:-1]).strip("\n")
+
+
+def _normalize_worker_scope(target_file, scope_path):
+    from .tools.files import normalize_agent_path, safe_path
+
+    target_norm = normalize_agent_path(target_file) if target_file else ""
+    scope_norm = normalize_agent_path(scope_path) if scope_path else ""
+    if scope_norm:
+        scope_resolved = safe_path(scope_norm)
+        if target_norm:
+            target_resolved = safe_path(target_norm)
+            try:
+                target_resolved.relative_to(scope_resolved)
+            except Exception as exc:
+                raise ValueError(f"Worker target '{target_norm}' is outside the allowed scope '{scope_norm}'") from exc
+        return target_norm or scope_norm, scope_resolved
+    if not target_norm:
+        raise ValueError("Worker requires a target file or scope")
+    return target_norm, safe_path(target_norm)
+
+
+def parse_worker_patch_payload(content):
+    text = strip_markdown_fences(content)
+    try:
+        data = json.loads(text)
+    except Exception as exc:
+        raise ValueError(f"Worker must return JSON patches: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ValueError("Worker patch payload must be a JSON object")
+    target = str(data.get("target_file", data.get("scope", "")) or "").strip()
+    patches = data.get("patches")
+    if not isinstance(patches, list) or not patches:
+        raise ValueError("Worker patch payload must include a non-empty patches array")
+    normalized_patches = []
+    for patch in patches:
+        if not isinstance(patch, dict):
+            raise ValueError("Each worker patch must be a JSON object")
+        try:
+            start_line = int(patch.get("start_line"))
+            end_line = int(patch.get("end_line"))
+        except Exception as exc:
+            raise ValueError("Worker patch start_line and end_line must be integers") from exc
+        new_text = patch.get("new_text")
+        if not isinstance(new_text, str):
+            raise ValueError("Worker patch new_text must be a string")
+        create_file = bool(patch.get("create_file", False))
+        normalized_patches.append({
+            "target_file": str(patch.get("target_file", "") or "").strip(),
+            "start_line": start_line,
+            "end_line": end_line,
+            "new_text": new_text,
+            "create_file": create_file,
+        })
+    return {
+        "target_file": target,
+        "scope": str(data.get("scope", "") or "").strip(),
+        "summary": str(data.get("summary", "") or "").strip(),
+        "patches": normalized_patches,
+    }
+
+
+def validate_worker_patch_payload(file_text_map, payload, target_norm, scope_resolved):
+    from .tools.files import normalize_agent_path, read_text_file, safe_path
+
+    resolved_patches = []
+    default_target = str(payload.get("target_file", "") or "").strip()
+    scope_allows_default_target = bool(default_target) and not scope_resolved.is_dir()
+    for patch in payload.get("patches", []):
+        patch_target = str(patch.get("target_file") or (default_target if scope_allows_default_target else "") or "").strip()
+        if not patch_target:
+            raise ValueError("Worker patch is missing target_file")
+        patch_target_norm = normalize_agent_path(patch_target)
+        patch_resolved = safe_path(patch_target_norm)
+        create_file = bool(patch.get("create_file", False))
+        start_line = int(patch.get("start_line", 0))
+        end_line = int(patch.get("end_line", 0))
+        try:
+            patch_resolved.relative_to(scope_resolved)
+        except Exception as exc:
+            raise ValueError(f"Worker patch target '{patch_target_norm}' is outside the allowed scope") from exc
+        if not patch_resolved.exists():
+            create_file = create_file or (start_line == 0 and end_line == 0)
+            if not create_file:
+                raise ValueError(f"File does not exist: {patch_target_norm}")
+        resolved_patch = dict(patch)
+        resolved_patch["create_file"] = create_file
+        resolved_patches.append((patch_target_norm, resolved_patch))
+
+    return resolved_patches
+
+
+def apply_worker_patch_payload(file_text_map, resolved_patches, scope_resolved):
+    updated_text_map = {}
+    grouped = {}
+    for target, patch in resolved_patches:
+        grouped.setdefault(target, []).append(patch)
+
+    for file_target, patches in grouped.items():
+        original_text = file_text_map.get(file_target)
+        if original_text is None:
+            create_patches = [patch for patch in patches if bool(patch.get("create_file", False))]
+            if create_patches:
+                if len(patches) != 1:
+                    raise ValueError(f"New files must be created with a single patch: {file_target}")
+                updated_text = create_patches[0]["new_text"]
+                updated_text_map[file_target] = updated_text
+                continue
+            original_text = read_text_file(file_target)
+            if original_text.startswith(("File does not", "Access denied", "File too large")):
+                raise ValueError(original_text)
+            file_text_map[file_target] = original_text
+        lines = original_text.splitlines()
+        for patch in sorted(patches, key=lambda item: int(item["start_line"]), reverse=True):
+            if bool(patch.get("create_file", False)):
+                raise ValueError(f"New files must be created with a single patch: {file_target}")
+            start_line = int(patch["start_line"])
+            end_line = int(patch["end_line"])
+            if start_line < 1 or end_line < start_line or end_line > len(lines):
+                raise ValueError(f"Invalid patch range: {start_line}-{end_line} for file with {len(lines)} line(s)")
+            new_lines = patch["new_text"].splitlines()
+            lines = lines[:start_line - 1] + new_lines + lines[end_line:]
+        updated_text = "\n".join(lines)
+        if original_text.endswith("\n"):
+            updated_text += "\n"
+        updated_text_map[file_target] = updated_text
+    return updated_text_map
+
+
+def worker_patch_preview_rows(payload, resolved_patches, proposed_text_map):
+    rows = [
+        ("Summary", payload.get("summary") or "No summary provided."),
+        ("Files", ", ".join(sorted(proposed_text_map)) or "None"),
+        ("Patch count", len(resolved_patches)),
+    ]
+    grouped = {}
+    for target, patch in resolved_patches:
+        grouped.setdefault(target, []).append(patch)
+    for file_target in sorted(grouped):
+        patch_count = len(grouped[file_target])
+        ranges = ", ".join(f"{p['start_line']}-{p['end_line']}" for p in grouped[file_target])
+        rows.append((file_target, f"{patch_count} patch(es); lines {ranges}"))
+    return rows
+
+
+def export_worker_patch_file(payload, resolved_patches):
+    from .project_context import project_log_dir
+
+    log_dir = project_log_dir()
+    log_dir.mkdir(parents=True, exist_ok=True)
+    safe_name = "".join(c for c in str(payload.get("target_file", "") or payload.get("scope", "") or "worker") if c.isalnum() or c in "-_")
+    safe_name = safe_name or "worker"
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out = log_dir / f"{safe_name}-{stamp}.patch"
+    lines = [
+        f"# Worker patch export",
+        f"# Summary: {payload.get('summary') or 'No summary provided.'}",
+        f"# Patch count: {len(resolved_patches)}",
+        "",
+    ]
+    grouped = {}
+    for target, patch in resolved_patches:
+        grouped.setdefault(target, []).append(patch)
+    for file_target in sorted(grouped):
+        lines.append(f"## {file_target}")
+        for patch in grouped[file_target]:
+            lines.append(f"@@ {patch['start_line']} {patch['end_line']}")
+            lines.append(patch["new_text"].rstrip("\n"))
+            lines.append("")
+    out.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    return out
+
+
+def run_worker_subagent(runtime, state, spec):
+    role, prompt, task_id, include_task_context, target_file, scope_path, preview, err = parse_asksubagent_spec(spec)
+    if err:
+        return err
+
+    from .tools.files import normalize_agent_path, file_tree
+
+    try:
+        target_norm, scope_resolved = _normalize_worker_scope(target_file, scope_path)
+    except ValueError as exc:
+        return str(exc)
+
+    file_text_map = {}
+    prompt_scope_text = ""
+    if scope_path and scope_resolved.is_dir() and not target_file:
+        scope_norm = normalize_agent_path(scope_path)
+        prompt_scope_text = file_tree(scope_norm, max_depth=4)
+    else:
+        original_text = read_text_file(target_norm)
+        if original_text.startswith(("File does not", "Access denied", "File too large")):
+            return original_text
+        file_text_map[target_norm] = original_text
+
+    task_context = build_subagent_context(
+        state,
+        role,
+        task_id=task_id,
+        include_task_context=include_task_context,
+    )
+    scope_display = scope_path or target_norm
+    result = run_subagent(
+        runtime.client,
+        state,
+        role,
+        prompt,
+        context={
+            "target_file": target_norm if target_file else "",
+            "scope_path": scope_display,
+            "ownership": "Only files inside this scope may be modified.",
+            "current_content": file_text_map.get(target_norm, ""),
+            "current_content_with_line_numbers": read_file_with_line_numbers(target_norm) if target_norm in file_text_map else "",
+            "scope_tree": prompt_scope_text or None,
+        },
+        task_context=task_context,
+    )
+
+    try:
+        payload = parse_worker_patch_payload(result.get("content", ""))
+    except ValueError as exc:
+        return str(exc)
+
+    try:
+        resolved_patches = validate_worker_patch_payload(file_text_map, payload, target_norm, scope_resolved)
+    except ValueError as exc:
+        return str(exc)
+
+    try:
+        proposed_text_map = apply_worker_patch_payload(file_text_map, resolved_patches, scope_resolved)
+    except ValueError as exc:
+        return str(exc)
+
+    created_files = {
+        target
+        for target, patch in resolved_patches
+        if bool(patch.get("create_file", False))
+    }
+    diffs = []
+    for file_target in sorted(proposed_text_map):
+        before_text = file_text_map.get(file_target)
+        if before_text is None:
+            if file_target in created_files:
+                before_text = ""
+            else:
+                before_text = read_text_file(file_target)
+                if before_text.startswith(("File does not", "Access denied", "File too large")):
+                    return before_text
+                file_text_map[file_target] = before_text
+        after_text = proposed_text_map[file_target]
+        if before_text == after_text:
+            continue
+        before = before_text.splitlines()
+        after = after_text.splitlines()
+        diffs.append(
+            "\n".join(
+                difflib.unified_diff(
+                    before,
+                    after,
+                    fromfile=f"{file_target} (before)",
+                    tofile=f"{file_target} (after)",
+                    lineterm="",
+                )
+            )
+        )
+    diff = "\n".join(chunk for chunk in diffs if chunk)
+    if not diff:
+        return "No changes were made."
+    ui.table("Worker Patch Preview", worker_patch_preview_rows(payload, resolved_patches, proposed_text_map))
+    print(diff[:12000])
+
+    if preview:
+        summary = payload.get("summary") or subagent_result_text(result)
+        return f"Preview complete. No changes applied.\n{summary}"
+
+    if input(ui.cyan("Keep these changes? [y/N]: ")).strip().lower() != "y":
+        return "Changes rolled back."
+
+    export_path = export_worker_patch_file(payload, resolved_patches)
+    for file_target, text_to_write in proposed_text_map.items():
+        before_text = file_text_map.get(file_target, "")
+        if before_text.endswith("\n") and not text_to_write.endswith("\n"):
+            text_to_write += "\n"
+        write_text_file(file_target, text_to_write)
+    return f"Changes kept. Patch export: {export_path}"
 
 
 def parse_taskretry(spec):
@@ -920,6 +1338,9 @@ def handle_exact_command(user_input, state, runtime):
     if user_input == "/runs":
         print(runs_text())
         return True
+    if user_input == "/subagents":
+        print(subagents_text())
+        return True
     if user_input == "/runclearall":
         count = clear_checkpoints()
         print(f"Deleted {count} checkpoint(s).")
@@ -1099,6 +1520,45 @@ def handle_prefixed_command(user_input, state, runtime):
     if user_input.startswith("/edit "):
         print(run_edit_file(runtime, user_input.split(" ", 1)[1].strip()))
         return True
+    if user_input.startswith("/asksubagent "):
+        spec = user_input.split(" ", 1)[1].strip()
+        try:
+            role = shlex.split(spec, posix=True)[0].strip() if spec else ""
+        except ValueError:
+            print("Usage: /asksubagent ROLE PROMPT [--file FILE] [--task ID] [--no-task] [--preview]")
+            print("Available subagents: " + ", ".join(SUBAGENT_ROLES))
+            return True
+        if role.lower() == "worker":
+            result = run_worker_subagent(runtime, state, spec)
+            print(result)
+            return True
+        role, prompt, task_id, include_task_context, target_file, scope_path, preview, err = parse_asksubagent_spec(spec)
+        if err:
+            print(err)
+            print("Available subagents: " + ", ".join(SUBAGENT_ROLES))
+            return True
+        try:
+            task_context = build_subagent_context(
+                state,
+                role,
+                task_id=task_id,
+                include_task_context=include_task_context,
+            )
+            result = run_subagent(runtime.client, state, role, prompt, context={
+                "active_project": state.active_project,
+                "provider_mode": state.provider_mode,
+                "routes": list(state.routes),
+            }, task_context=task_context)
+        except ValueError as exc:
+            print(str(exc))
+            print("Available subagents: " + ", ".join(SUBAGENT_ROLES))
+            return True
+        ui.panel(subagent_result_text(result), title=f"Subagent: {role}", style="cyan")
+        return True
+    if user_input == "/runplan" or user_input.startswith("/runplan "):
+        spec = user_input.split(" ", 1)[1].strip() if " " in user_input else ""
+        print(run_plan_file(runtime, state, spec))
+        return True
     if user_input.startswith("/explain "):
         target = user_input.split(" ", 1)[1].strip()
         result = runtime.run_task(f"Explain this file clearly. Read it first, summarize purpose, main functions/classes, dependencies, and risks: {target}")
@@ -1187,11 +1647,29 @@ def handle_prefixed_command(user_input, state, runtime):
         except Exception:
             ui.warn("Usage: /verbose LEVEL")
         return True
+    if user_input.startswith("/temperature "):
+        try:
+            temperature = float(user_input.split(" ", 1)[1])
+            if temperature < 0.0 or temperature > 2.0:
+                ui.warn("Use /temperature between 0.0 and 2.0.")
+            else:
+                state.temperature = temperature
+                state.save_project_session()
+                ui.info(f"Temperature set to {state.temperature}")
+        except Exception:
+            ui.warn("Usage: /temperature N")
+        return True
     return False
 
 
 def handle_command(user_input, state, runtime):
     return handle_exact_command(user_input, state, runtime) or handle_prefixed_command(user_input, state, runtime)
+
+
+def restart_app():
+    if sys.argv and sys.argv[0]:
+        os.execv(sys.executable, [sys.executable, *sys.argv])
+    os.execv(sys.executable, [sys.executable, "-m", "openrouter_agent.cli"])
 
 
 def main():
@@ -1225,6 +1703,9 @@ def main():
 
         if user_input == "/exit":
             break
+        if user_input == "/restart":
+            ui.info("Restarting app...")
+            restart_app()
         if handle_command(user_input, state, runtime):
             continue
 

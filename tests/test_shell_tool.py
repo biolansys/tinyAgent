@@ -25,18 +25,22 @@ class ShellToolTests(unittest.TestCase):
         self.assertEqual("C:/workspace/alpha", result)
 
     def test_allows_configured_binary_when_explicitly_passed(self):
-        with patch("builtins.input", return_value="n"), patch("builtins.print"), patch(
+        with patch("builtins.input") as mock_input, patch("builtins.print"), patch(
             "openrouter_agent.tools.shell.subprocess.run"
         ) as mock_run:
+            mock_run.return_value.returncode = 0
+            mock_run.return_value.stdout = "coder"
+            mock_run.return_value.stderr = ""
             result = shell.run_shell_command("whoami", allowed_binaries={"whoami"})
-        self.assertEqual("Command cancelled.", result)
-        mock_run.assert_not_called()
+        self.assertEqual("coder", result)
+        mock_run.assert_called_once()
+        mock_input.assert_not_called()
 
     def test_cancelled_subprocess_command(self):
         with patch("builtins.input", return_value="n"), patch("builtins.print"), patch(
             "openrouter_agent.tools.shell.subprocess.run"
         ) as mock_run:
-            result = shell.run_shell_command("python -m pytest")
+            result = shell.run_shell_command("python -m pip install demo-package")
         self.assertEqual("Command cancelled.", result)
         mock_run.assert_not_called()
 
@@ -48,7 +52,7 @@ class ShellToolTests(unittest.TestCase):
 
     def test_background_task_shell_confirmation_is_blocked_cleanly(self):
         with patch("openrouter_agent.tools.shell._interactive_confirmation_available", return_value=False):
-            result = shell.run_shell_command_result("python -m pytest")
+            result = shell.run_shell_command_result("python -m pip install demo-package")
         self.assertFalse(result.ok)
         self.assertEqual("confirmation", result.category)
         self.assertIn("blocked while a background task is running", result.message)

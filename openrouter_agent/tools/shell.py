@@ -9,6 +9,9 @@ from ..project_context import current_project_root
 
 SHELL_METACHARS = {"&", "|", ";", ">", "<", "`"}
 ALLOWED_BINARIES = {"python", "python3", "py", "pip", "pip3", "pytest", "git", "dir", "ls", "type", "cat", "pwd"}
+READ_ONLY_BINARIES = {"whoami", "hostname", "where", "echo", "ver", "date", "time", "pytest", "unittest"}
+READ_ONLY_GIT_SUBCOMMANDS = {"status", "diff", "log", "show"}
+SESSION_APPROVED_COMMANDS = set()
 
 
 def _interactive_confirmation_available():
@@ -70,10 +73,36 @@ def _handle_builtin(tokens):
 def _validate_subprocess_tokens(tokens):
     binary = tokens[0].lower()
     if binary == "git":
-        if len(tokens) < 2 or tokens[1].lower() not in {"status", "diff"}:
-            raise ValueError("Only 'git status' and 'git diff' are allowed.")
+        if len(tokens) < 2 or tokens[1].lower() not in READ_ONLY_GIT_SUBCOMMANDS:
+            raise ValueError("Only read-only git commands are allowed.")
     if binary in {"python", "python3", "py"} and len(tokens) > 1 and tokens[1] in {"-c", "/c", "-"}:
         raise ValueError("Inline Python execution is blocked.")
+
+
+def _is_read_only_python_command(tokens):
+    binary = tokens[0].lower()
+    if binary not in {"python", "python3", "py"}:
+        return False
+    if len(tokens) >= 3 and tokens[1] == "-m" and tokens[2].lower() in {"pytest", "unittest"}:
+        return True
+    return False
+
+
+def _requires_confirmation(tokens):
+    binary = tokens[0].lower()
+    if binary in {"dir", "ls", "pwd", "type", "cat"}:
+        return False
+    if binary in READ_ONLY_BINARIES:
+        return False
+    if binary == "git" and len(tokens) >= 2 and tokens[1].lower() in READ_ONLY_GIT_SUBCOMMANDS:
+        return False
+    if _is_read_only_python_command(tokens):
+        return False
+    return True
+
+
+def _approval_key(tokens):
+    return (str(current_project_root()), tuple(tokens))
 
 
 def run_shell_command_result(command, allowed_binaries=None):
@@ -86,16 +115,20 @@ def run_shell_command_result(command, allowed_binaries=None):
     except Exception as e:
         return OperationResult(False, str(e), category="validation")
 
-    if not _interactive_confirmation_available():
-        return OperationResult(
-            False,
-            "Confirmation-required shell command blocked while a background task is running. Re-run it directly from the CLI.",
-            category="confirmation",
-        )
+    if _requires_confirmation(tokens):
+        approval_key = _approval_key(tokens)
+        if approval_key not in SESSION_APPROVED_COMMANDS:
+            if not _interactive_confirmation_available():
+                return OperationResult(
+                    False,
+                    "Confirmation-required shell command blocked while a background task is running. Re-run it directly from the CLI.",
+                    category="confirmation",
+                )
 
-    print(f"\nCommand requested:\n{' '.join(tokens)}\nWorking directory: {current_project_root()}")
-    if input("Allow command? [y/N]: ").strip().lower() != "y":
-        return OperationResult(False, "Command cancelled.", category="cancelled")
+            print(f"\nCommand requested:\n{' '.join(tokens)}\nWorking directory: {current_project_root()}")
+            if input("Allow command? [y/N]: ").strip().lower() != "y":
+                return OperationResult(False, "Command cancelled.", category="cancelled")
+            SESSION_APPROVED_COMMANDS.add(approval_key)
 
     try:
         r = subprocess.run(tokens, cwd=str(current_project_root()), capture_output=True, text=True, timeout=120, shell=False)

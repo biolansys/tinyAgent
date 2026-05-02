@@ -1,5 +1,6 @@
 import json
 import shutil
+import subprocess
 from pathlib import Path
 from . import config
 
@@ -50,6 +51,24 @@ def ensure_project(name: str) -> Path:
     return root
 
 
+def _initialize_new_project(root: Path) -> None:
+    (root / "tests").mkdir(parents=True, exist_ok=True)
+    (root / "logs").mkdir(parents=True, exist_ok=True)
+    try:
+        subprocess.run(
+            ["git", "init"],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=30,
+            shell=False,
+            check=False,
+        )
+    except Exception:
+        # Keep project creation functional even when git is unavailable.
+        pass
+
+
 def get_active_project() -> str:
     global _active_project
     if _active_project:
@@ -65,7 +84,9 @@ def get_active_project() -> str:
         _active_project = projects[0]
         _save_active_project(_active_project)
         return _active_project
-    ensure_project(DEFAULT_PROJECT)
+    default_root = ensure_project(DEFAULT_PROJECT)
+    if not (default_root / ".git").exists():
+        _initialize_new_project(default_root)
     _active_project = DEFAULT_PROJECT
     _save_active_project(_active_project)
     return _active_project
@@ -83,7 +104,11 @@ def set_active_project(name: str) -> str:
 
 def create_project(name: str) -> str:
     global _active_project
+    root = project_root(name)
+    is_new = not root.exists()
     root = ensure_project(name)
+    if is_new:
+        _initialize_new_project(root)
     _active_project = root.name
     _save_active_project(_active_project)
     return _active_project
