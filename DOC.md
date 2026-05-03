@@ -530,3 +530,130 @@ Recommended checks:
 6. Add/update tests in `tests/`
 7. Run test suite
 8. Commit once behavior is stable
+
+## Production Ops Guide
+
+This section is a short operator runbook for production use.
+
+### 1) Backup
+
+Back up these paths before upgrades or risky changes:
+
+- `workspace/` (projects, sessions, memory)
+- `logs/` (task/audit history)
+- `plugins/` and `plugins.json`
+- `.model_discovery_cache.json`
+- `.model_ranking.json`
+- `.env` (if stored locally)
+
+Use app-level backup when possible:
+
+- `/snapshot NAME` for active project snapshot
+- `/exportrepo NAME` for active project export
+
+Recommended cadence:
+
+- Daily: `workspace/` and `logs/`
+- Before any deployment: full backup set above
+
+### 2) Restore
+
+Restore order:
+
+1. Stop the app.
+2. Restore `workspace/` first.
+3. Restore `plugins/` and `plugins.json`.
+4. Restore model cache/ranking files if needed.
+5. Restore `.env`.
+6. Start app and run `/doctor`.
+7. Validate active project with `/projectinfo` and `/gitstatus`.
+
+If plugin-related issues appear after restore:
+
+- run `/plugins`
+- disable or fix failing plugin entries in `plugins.json`
+- `/restart`
+
+### 3) Upgrades
+
+Safe upgrade sequence:
+
+1. `git status` must be clean (or intentionally staged).
+2. Create backups (see Backup section).
+3. Pull/update code.
+4. Install/update dependencies:
+   - `python -m pip install -r requirements.txt`
+5. Run tests:
+   - `python -m unittest discover -s tests -v`
+6. Start app and run `/doctor`.
+7. Verify key commands:
+   - `/dashboard`
+   - `/plugins`
+   - `/projectpath`
+   - `/tests` (on a non-critical project)
+
+Rollback:
+
+- restore previous backup
+- reset to previous known-good commit/tag
+- rerun `/doctor`
+
+### 4) Plugin Rollout
+
+Rollout checklist:
+
+1. Add or update plugin module in `plugins/`.
+2. Register in `plugins.json` with:
+   - `priority`
+   - required `capabilities`
+   - commands/hooks
+3. Run unit tests.
+4. Deploy to staging first.
+5. Restart app: `/restart`.
+6. Validate:
+   - `/plugins` (no loader errors)
+   - plugin command health checks
+   - hook behavior on test project
+
+Rollback plugin:
+
+1. Remove/disable plugin entry from `plugins.json`.
+2. `/restart`.
+3. Confirm with `/plugins`.
+
+### 5) Incident Handling
+
+Use this quick triage flow:
+
+1. Capture context:
+   - current command/task
+   - active project (`/projectpath`)
+   - recent logs (`/history`, `/audit`)
+2. Run diagnostics:
+   - `/doctor`
+   - `/plugins`
+   - `/gitstatus`
+3. Isolate impact:
+   - switch to safe project if needed (`/project NAME`)
+   - disable problematic plugin in `plugins.json`
+   - `/restart`
+4. Contain:
+   - set `/auto off`
+   - set `/review on`
+   - reduce `/tooliters` temporarily
+5. Recover:
+   - restore from snapshot/export if project files are damaged
+   - rerun targeted tests
+6. Post-incident:
+   - record root cause
+   - add regression test
+   - update plugin policy or guidance
+
+### 6) Minimum Production Checklist
+
+Before daily operations:
+
+- `/doctor` shows expected status
+- `/plugins` has no loader errors
+- tests pass on deployed revision
+- backup from last 24h is available and verified
