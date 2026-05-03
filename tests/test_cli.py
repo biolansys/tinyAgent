@@ -176,6 +176,25 @@ class CliTests(unittest.TestCase):
         self.assertEqual(["r2", "r1"], state.routes)
         state.save_project_session.assert_called_once()
 
+    def test_doctor_report_contains_header(self):
+        state = make_state()
+        with patch("openrouter_agent.cli.current_project_root", return_value=Path("workspace/alpha")), patch(
+            "openrouter_agent.cli.shutil.which", return_value="C:/git/bin/git.exe"
+        ):
+            text = cli.doctor_report(state)
+        self.assertIn("Doctor report:", text)
+        self.assertIn("Git binary available", text)
+
+    def test_handle_exact_command_doctor_prints_report(self):
+        state = make_state()
+        runtime = make_runtime()
+        with patch("openrouter_agent.cli.doctor_report", return_value="Doctor report:\n- sample"), patch(
+            "builtins.print"
+        ) as mock_print:
+            handled = cli.handle_exact_command("/doctor", state, runtime)
+        self.assertTrue(handled)
+        mock_print.assert_called_once()
+
     def test_handle_prefixed_command_switches_project(self):
         state = make_state()
         runtime = make_runtime()
@@ -193,6 +212,18 @@ class CliTests(unittest.TestCase):
         state.load_project_session.assert_called_once()
         runtime.reset_messages.assert_called_once()
         state.save_project_session.assert_called_once()
+
+    def test_handle_prefixed_command_projectnew_activates_project(self):
+        state = make_state()
+        runtime = make_runtime()
+        with patch("openrouter_agent.cli.create_project", return_value="gamma"), patch(
+            "openrouter_agent.cli.current_project_root", return_value="C:/workspace/gamma"
+        ), patch("openrouter_agent.cli.load_prompt_history"), patch(
+            "openrouter_agent.cli.MultiProviderClient", return_value="client"
+        ), patch("openrouter_agent.cli.ui.success"), patch("openrouter_agent.cli.ui.info"):
+            handled = cli.handle_prefixed_command("/projectnew gamma", state, runtime)
+        self.assertTrue(handled)
+        self.assertEqual("gamma", state.active_project)
 
     def test_activate_project_reloads_prompt_history_for_project(self):
         state = make_state()
@@ -373,6 +404,21 @@ class CliTests(unittest.TestCase):
             handled = cli.handle_prefixed_command("/runplan subagent_plan.md", state, runtime)
         self.assertTrue(handled)
         mock_print.assert_called_once_with("Plan completed.")
+
+    def test_runplan_without_path_uses_default_runplan_md(self):
+        state = make_state()
+        runtime = make_runtime()
+        with patch("builtins.input", return_value="y"), patch(
+            "openrouter_agent.cli.read_text_file",
+            return_value="/asksubagent review \"ok\"\n",
+        ), patch("openrouter_agent.cli.handle_prefixed_command", return_value=True):
+            result = cli.run_plan_file(runtime, state, "")
+        self.assertIn("Plan completed. Executed 1 subagent command", result)
+
+    def test_parse_runtime_flags_headless_and_preapprove(self):
+        parsed = cli.parse_runtime_flags(["--headless", "--approve-cmd", "python -m pip install demo-package"])
+        self.assertTrue(parsed["headless"])
+        self.assertEqual(["python -m pip install demo-package"], parsed["approve_cmd"])
 
     def test_parse_asksubagent_spec_parses_task_and_prompt(self):
         role, prompt, task_id, include_task_context, target_file, scope_path, preview, err = cli.parse_asksubagent_spec('review "check this file" --task t1')

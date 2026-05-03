@@ -53,6 +53,36 @@ class PluginHookTests(unittest.TestCase):
             result = runtime.run_task("anything")
         self.assertIn("Task blocked by plugin hook: policy", result)
 
+    def test_run_task_calls_after_task_hook(self):
+        runtime = AgentRuntime(
+            client=SimpleNamespace(),
+            state=SimpleNamespace(
+                verbose=0,
+                dry_run=False,
+                retry_safe_mode=False,
+                max_tool_iterations=1,
+                review_enabled=False,
+                auto_max_rounds=0,
+                active_project="alpha",
+            ),
+        )
+        with patch("openrouter_agent.agents.core.get_plugin_manager") as mock_plugins, patch(
+            "openrouter_agent.agents.core.new_task_id", return_value="t1"
+        ), patch("openrouter_agent.agents.core.log_task_start"), patch(
+            "openrouter_agent.agents.core.log_task_plan"
+        ), patch("openrouter_agent.agents.core.log_task_end"), patch(
+            "openrouter_agent.agents.core.save_checkpoint"
+        ), patch.object(runtime, "create_plan", return_value={"steps": []}), patch.object(
+            runtime, "execute_plan", return_value="done"
+        ), patch.object(runtime, "print_plan"):
+            mock_plugins.return_value.emit_hook.side_effect = [
+                {"blocked": False, "updates": {}, "warnings": []},
+                {"blocked": False, "updates": {}, "warnings": []},
+            ]
+            result = runtime.run_task("anything")
+        self.assertEqual("done", result)
+        self.assertEqual(2, mock_plugins.return_value.emit_hook.call_count)
+
 
 if __name__ == "__main__":
     unittest.main()

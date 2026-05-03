@@ -5,6 +5,9 @@ from openrouter_agent.tools import shell
 
 
 class ShellToolTests(unittest.TestCase):
+    def setUp(self):
+        shell.reset_shell_runtime()
+
     def test_rejects_shell_metacharacters(self):
         result = shell.run_shell_command("python -m pytest && whoami")
         self.assertIn("Shell metacharacters are not allowed.", result)
@@ -56,6 +59,29 @@ class ShellToolTests(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertEqual("confirmation", result.category)
         self.assertIn("blocked while a background task is running", result.message)
+
+    def test_headless_blocks_unapproved_confirmation_command(self):
+        shell.configure_shell_runtime(headless=True, preapproved_commands=[])
+        result = shell.run_shell_command_result("python -m pip install demo-package")
+        self.assertFalse(result.ok)
+        self.assertEqual("confirmation", result.category)
+        self.assertIn("blocked in headless mode", result.message)
+
+    def test_headless_allows_preapproved_command(self):
+        shell.configure_shell_runtime(
+            headless=True,
+            preapproved_commands=["python -m pip install demo-package"],
+        )
+        with patch("builtins.input") as mock_input, patch("builtins.print"), patch(
+            "openrouter_agent.tools.shell.subprocess.run"
+        ) as mock_run:
+            mock_run.return_value.returncode = 0
+            mock_run.return_value.stdout = "ok"
+            mock_run.return_value.stderr = ""
+            result = shell.run_shell_command_result("python -m pip install demo-package")
+        self.assertTrue(result.ok)
+        self.assertEqual("subprocess", result.category)
+        mock_input.assert_not_called()
 
 
 if __name__ == "__main__":

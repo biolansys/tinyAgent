@@ -3,6 +3,8 @@ import difflib
 import shlex
 import os
 import sys
+import shutil
+import argparse
 from datetime import datetime
 try:
     import readline
@@ -16,7 +18,7 @@ from .providers.client import MultiProviderClient
 from .agents.core import AgentRuntime
 from .ui import console as ui
 from .tools.files import snapshot, export_repo, validate_path, read_file_with_line_numbers, read_text_file, write_text_file
-from .tools.shell import run_shell_command
+from .tools.shell import run_shell_command, configure_shell_runtime
 from .guidance import ensure_guidance_files, load_guidance
 from .indexer import build_code_index, search_code_index, index_stats, explain_index_file
 from .audit import audit_report, clear_audit, history_report, clear_history, task_detail
@@ -47,6 +49,7 @@ from .project_context import (
 COMMANDS = {
     "/help [COMMAND]": "Show help or details for one command",
     "/dashboard": "Show status dashboard",
+    "/doctor": "Run local health checks and diagnostics",
     "/models": "Show selected provider::model routes",
     "/discover": "Smart discover using cache, ranking, and early stop",
     "/discoverfull": "Force full discovery without cache or early stop",
@@ -144,7 +147,7 @@ PLUGIN_MANAGER = get_plugin_manager()
 
 HELP_SECTIONS = [
     ("General", [
-        "/help", "/dashboard", "/usage", "/verbose LEVEL", "/temperature N", "/clear", "/restart", "/exit",
+        "/help", "/dashboard", "/doctor", "/usage", "/verbose LEVEL", "/temperature N", "/clear", "/restart", "/exit",
     ]),
     ("Projects", [
         "/projects", "/project NAME", "/projectnew NAME", "/projectclone SRC DEST",
@@ -1050,6 +1053,36 @@ def dashboard(state):
             print("-", r)
 
 
+def _ok(value):
+    return "OK" if value else "WARN"
+
+
+def doctor_report(state):
+    active_root = current_project_root()
+    checks = [
+        ("Workspace directory", _ok(config.WORKSPACE.exists()), str(config.WORKSPACE)),
+        ("Logs directory", _ok(config.LOG_DIR.exists()), str(config.LOG_DIR)),
+        ("Active project directory", _ok(active_root.exists()), str(active_root)),
+        ("Git binary available", _ok(bool(shutil.which("git"))), str(shutil.which("git") or "not found")),
+        ("Project git repository", _ok((active_root / ".git").exists()), str(active_root / ".git")),
+        ("OPENROUTER_API_KEY", _ok(bool(config.OPENROUTER_API_KEY)), "configured" if config.OPENROUTER_API_KEY else "missing"),
+        ("HF token", _ok(bool(config.HF_TOKEN)), "configured" if config.HF_TOKEN else "missing"),
+        ("MISTRAL_API_KEY", _ok(bool(config.MISTRAL_API_KEY)), "configured" if config.MISTRAL_API_KEY else "missing"),
+        ("Routes loaded", _ok(bool(getattr(state, "routes", []))), str(len(getattr(state, "routes", [])))),
+        ("Plugins loaded", _ok(bool(PLUGIN_MANAGER.commands or PLUGIN_MANAGER.hooks)), f"commands={len(PLUGIN_MANAGER.commands)} hooks={sum(len(v) for v in PLUGIN_MANAGER.hooks.values())}"),
+        ("Plugin loader errors", _ok(not PLUGIN_MANAGER.errors), str(len(PLUGIN_MANAGER.errors))),
+    ]
+    lines = ["Doctor report:"]
+    for name, status, detail in checks:
+        lines.append(f"- {name}: {status} ({detail})")
+    if PLUGIN_MANAGER.errors:
+        lines.append("")
+        lines.append("Plugin errors:")
+        for err in PLUGIN_MANAGER.errors:
+            lines.append(f"- {err}")
+    return "\n".join(lines)
+
+
 def projects_text(active_project):
     projects = list_projects()
     if not projects:
@@ -1243,6 +1276,9 @@ def handle_exact_command(user_input, state, runtime):
         return True
     if user_input == "/dashboard":
         dashboard(state)
+        return True
+    if user_input == "/doctor":
+        print(doctor_report(state))
         return True
     if user_input == "/models":
         print("\n".join(state.routes))
@@ -1711,8 +1747,24 @@ def restart_app():
     os.execv(sys.executable, [sys.executable, "-m", "openrouter_agent.cli"])
 
 
+def parse_runtime_flags(argv):
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--headless", action="store_true")
+    parser.add_argument("--approve-cmd", action="append", default=[])
+    args, _unknown = parser.parse_known_args(list(argv or []))
+    return {
+        "headless": bool(args.headless),
+        "approve_cmd": [str(x).strip() for x in args.approve_cmd if str(x).strip()],
+    }
+
+
 def main():
     ensure_guidance_files()
+    runtime_flags = parse_runtime_flags(sys.argv[1:])
+    configure_shell_runtime(
+        headless=runtime_flags["headless"],
+        preapproved_commands=runtime_flags["approve_cmd"],
+    )
     PLUGIN_MANAGER.load_manifest(config.PLUGIN_MANIFEST_FILE)
     COMMANDS.update(PLUGIN_MANAGER.get_help_entries())
     state = AgentState()

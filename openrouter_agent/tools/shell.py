@@ -12,6 +12,8 @@ ALLOWED_BINARIES = {"python", "python3", "py", "pip", "pip3", "pytest", "git", "
 READ_ONLY_BINARIES = {"whoami", "hostname", "where", "echo", "ver", "date", "time", "pytest", "unittest"}
 READ_ONLY_GIT_SUBCOMMANDS = {"status", "diff", "log", "show"}
 SESSION_APPROVED_COMMANDS = set()
+HEADLESS_MODE = False
+PREAPPROVED_COMMANDS = set()
 
 
 def _interactive_confirmation_available():
@@ -105,6 +107,26 @@ def _approval_key(tokens):
     return (str(current_project_root()), tuple(tokens))
 
 
+def _tokens_key(tokens):
+    return tuple(str(x).strip().lower() for x in (tokens or []))
+
+
+def configure_shell_runtime(headless=False, preapproved_commands=None):
+    global HEADLESS_MODE, PREAPPROVED_COMMANDS
+    HEADLESS_MODE = bool(headless)
+    PREAPPROVED_COMMANDS = {
+        _tokens_key(_parse_command(str(command).strip()))
+        for command in (preapproved_commands or [])
+        if str(command).strip()
+    }
+
+
+def reset_shell_runtime():
+    global HEADLESS_MODE, PREAPPROVED_COMMANDS
+    HEADLESS_MODE = False
+    PREAPPROVED_COMMANDS = set()
+
+
 def run_shell_command_result(command, allowed_binaries=None):
     try:
         tokens = _parse_command(command.strip(), allowed_binaries=allowed_binaries)
@@ -117,6 +139,15 @@ def run_shell_command_result(command, allowed_binaries=None):
 
     if _requires_confirmation(tokens):
         approval_key = _approval_key(tokens)
+        if HEADLESS_MODE:
+            if _tokens_key(tokens) not in PREAPPROVED_COMMANDS:
+                return OperationResult(
+                    False,
+                    "Confirmation-required shell command blocked in headless mode (not pre-approved).",
+                    category="confirmation",
+                )
+            SESSION_APPROVED_COMMANDS.add(approval_key)
+
         if approval_key not in SESSION_APPROVED_COMMANDS:
             if not _interactive_confirmation_available():
                 return OperationResult(
