@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from openrouter_agent import cli
+from openrouter_agent.results import OperationResult
 
 
 def make_state():
@@ -143,7 +144,14 @@ class CliTests(unittest.TestCase):
         mock_print.assert_called_once_with("removed")
 
     def test_help_topic_text_resolves_models_command(self):
+        cli._COMMAND_REFERENCE_CACHE = None
         text = cli.help_topic_text("models")
+        self.assertIn("/models", text)
+        self.assertIn("Lists currently selected provider routes", text)
+
+    def test_help_topic_text_falls_back_when_reference_missing(self):
+        with patch("openrouter_agent.cli._load_command_reference", return_value={}):
+            text = cli.help_topic_text("models")
         self.assertIn("/models", text)
         self.assertIn("Show selected provider::model routes", text)
 
@@ -195,6 +203,64 @@ class CliTests(unittest.TestCase):
         self.assertTrue(handled)
         mock_print.assert_called_once()
 
+    def test_smoketest_report_contains_header(self):
+        state = make_state()
+        with patch("openrouter_agent.cli.doctor_report", return_value="Doctor report:\n- ok"), patch(
+            "openrouter_agent.cli.current_project_root", return_value=Path("workspace/alpha")
+        ):
+            text = cli.smoketest_report(state)
+        self.assertIn("Smoketest:", text)
+        self.assertIn("core command map contains key commands", text)
+
+    def test_handle_exact_command_smoketest_prints_report(self):
+        state = make_state()
+        runtime = make_runtime()
+        with patch("openrouter_agent.cli.smoketest_report", return_value="Smoketest: PASS"), patch(
+            "builtins.print"
+        ) as mock_print:
+            handled = cli.handle_exact_command("/smoketest", state, runtime)
+        self.assertTrue(handled)
+        mock_print.assert_called_once_with("Smoketest: PASS")
+
+    def test_releasecheck_report_contains_header(self):
+        state = make_state()
+        with patch("openrouter_agent.cli._load_command_reference", return_value={k: k for k in cli.COMMANDS.keys()}), patch(
+            "openrouter_agent.cli.smoketest_report", return_value="Smoketest: PASS"
+        ), patch(
+            "openrouter_agent.cli.run_shell_command_result",
+            return_value=OperationResult(True, "ok", code=0, category="subprocess"),
+        ):
+            text = cli.releasecheck_report(state)
+        self.assertIn("Releasecheck:", text)
+        self.assertIn("unit test suite", text)
+        self.assertNotIn("CI artifact pack:", text)
+
+    def test_releasecheck_warn_creates_artifact_pack(self):
+        state = make_state()
+        with patch("openrouter_agent.cli._load_command_reference", return_value={}), patch(
+            "openrouter_agent.cli.smoketest_report", return_value="Smoketest: WARN"
+        ), patch(
+            "openrouter_agent.cli.run_shell_command_result",
+            return_value=OperationResult(False, "failed", code=1, category="subprocess"),
+        ), patch(
+            "openrouter_agent.cli.create_releasecheck_artifact",
+            return_value="C:/logs/releasecheck/demo.zip",
+        ) as mock_art:
+            text = cli.releasecheck_report(state)
+        self.assertIn("Releasecheck: WARN", text)
+        self.assertIn("CI artifact pack: C:/logs/releasecheck/demo.zip", text)
+        mock_art.assert_called_once()
+
+    def test_handle_exact_command_releasecheck_prints_report(self):
+        state = make_state()
+        runtime = make_runtime()
+        with patch("openrouter_agent.cli.releasecheck_report", return_value="Releasecheck: PASS"), patch(
+            "builtins.print"
+        ) as mock_print:
+            handled = cli.handle_exact_command("/releasecheck", state, runtime)
+        self.assertTrue(handled)
+        mock_print.assert_called_once_with("Releasecheck: PASS")
+
     def test_handle_prefixed_command_switches_project(self):
         state = make_state()
         runtime = make_runtime()
@@ -224,6 +290,20 @@ class CliTests(unittest.TestCase):
             handled = cli.handle_prefixed_command("/projectnew gamma", state, runtime)
         self.assertTrue(handled)
         self.assertEqual("gamma", state.active_project)
+
+    def test_handle_prefixed_command_projectnew_with_template(self):
+        state = make_state()
+        runtime = make_runtime()
+        with patch("openrouter_agent.cli.create_project", return_value="gamma"), patch(
+            "openrouter_agent.cli.current_project_root", return_value="C:/workspace/gamma"
+        ), patch("openrouter_agent.cli.load_prompt_history"), patch(
+            "openrouter_agent.cli.MultiProviderClient", return_value="client"
+        ), patch("openrouter_agent.cli.apply_project_template", return_value="Template applied: api") as mock_tpl, patch(
+            "openrouter_agent.cli.ui.success"
+        ), patch("openrouter_agent.cli.ui.info"):
+            handled = cli.handle_prefixed_command("/projectnew gamma --template api", state, runtime)
+        self.assertTrue(handled)
+        mock_tpl.assert_called_once_with("gamma", "api")
 
     def test_activate_project_reloads_prompt_history_for_project(self):
         state = make_state()
@@ -420,6 +500,18 @@ class CliTests(unittest.TestCase):
         self.assertTrue(parsed["headless"])
         self.assertEqual(["python -m pip install demo-package"], parsed["approve_cmd"])
 
+    def test_parse_projectnew_spec_with_template(self):
+        name, template, err = cli.parse_projectnew_spec("alpha --template tkinter")
+        self.assertIsNone(err)
+        self.assertEqual("alpha", name)
+        self.assertEqual("tkinter", template)
+
+    def test_parse_projectnew_spec_rejects_invalid_template(self):
+        name, template, err = cli.parse_projectnew_spec("alpha --template bad")
+        self.assertIsNone(name)
+        self.assertIsNone(template)
+        self.assertIn("Invalid template", err)
+
     def test_parse_asksubagent_spec_parses_task_and_prompt(self):
         role, prompt, task_id, include_task_context, target_file, scope_path, preview, err = cli.parse_asksubagent_spec('review "check this file" --task t1')
         self.assertIsNone(err)
@@ -484,6 +576,7 @@ class CliTests(unittest.TestCase):
         runtime = make_runtime()
         runtime.client = object()
         payload = {
+            "payload_version": 1,
             "target_file": "app.py",
             "summary": "Add one line.",
             "patches": [
@@ -505,11 +598,14 @@ class CliTests(unittest.TestCase):
                 "openrouter_agent.cli.build_subagent_context", return_value={"task_id": "t1"}
             ), patch("openrouter_agent.cli.ui.table") as mock_table, patch(
                 "openrouter_agent.cli.export_worker_patch_file", return_value=Path("C:/scope/patch.patch")
-            ):
+            ), patch("openrouter_agent.cli.latest_task_id", return_value="t1"), patch(
+                "openrouter_agent.cli.log_subagent_event"
+            ) as mock_audit:
                 result = cli.run_worker_subagent(runtime, state, 'worker --file app.py "add line"')
 
             self.assertEqual("Changes kept. Patch export: C:\\scope\\patch.patch", result)
             mock_table.assert_called_once()
+            self.assertGreaterEqual(mock_audit.call_count, 2)
         finally:
             if root.exists():
                 for child in sorted(root.rglob("*"), reverse=True):
@@ -524,6 +620,7 @@ class CliTests(unittest.TestCase):
         runtime = make_runtime()
         runtime.client = object()
         payload = {
+            "payload_version": 1,
             "scope": ".",
             "summary": "Create the scaffold.",
             "patches": [
@@ -551,6 +648,8 @@ class CliTests(unittest.TestCase):
                 "openrouter_agent.cli.ui.table"
             ), patch("openrouter_agent.cli.input", return_value="y"), patch(
                 "openrouter_agent.cli.export_worker_patch_file", return_value=Path("C:/scope/patch.patch")
+            ), patch("openrouter_agent.cli.latest_task_id", return_value="t1"), patch(
+                "openrouter_agent.cli.log_subagent_event"
             ):
                 result = cli.run_worker_subagent(runtime, state, 'worker --scope . "create scaffold"')
 
@@ -566,8 +665,25 @@ class CliTests(unittest.TestCase):
                     child.rmdir()
                 root.rmdir()
 
+    def test_apply_worker_changes_transactional_rolls_back_on_failure(self):
+        writes = []
+
+        def fake_write(path, text):
+            writes.append((path, text))
+            if path == "b.py" and text == "NEW_B":
+                raise RuntimeError("write failed")
+
+        with patch("openrouter_agent.cli.write_text_file", side_effect=fake_write):
+            with self.assertRaises(RuntimeError):
+                cli.apply_worker_changes_transactional(
+                    {"a.py": "OLD_A", "b.py": "OLD_B"},
+                    {"a.py": "NEW_A", "b.py": "NEW_B"},
+                )
+        self.assertIn(("a.py", "OLD_A"), writes)
+
     def test_parse_worker_patch_payload_parses_json_patches(self):
         payload = cli.parse_worker_patch_payload(json.dumps({
+            "payload_version": 1,
             "target_file": "app.py",
             "summary": "Update line.",
             "patches": [{"start_line": 1, "end_line": 1, "new_text": "line1", "create_file": False}],

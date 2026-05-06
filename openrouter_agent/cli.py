@@ -5,6 +5,8 @@ import os
 import sys
 import shutil
 import argparse
+import re
+import zipfile
 from datetime import datetime
 try:
     import readline
@@ -18,10 +20,10 @@ from .providers.client import MultiProviderClient
 from .agents.core import AgentRuntime
 from .ui import console as ui
 from .tools.files import snapshot, export_repo, validate_path, read_file_with_line_numbers, read_text_file, write_text_file
-from .tools.shell import run_shell_command, configure_shell_runtime
+from .tools.shell import run_shell_command, run_shell_command_result, configure_shell_runtime
 from .guidance import ensure_guidance_files, load_guidance
 from .indexer import build_code_index, search_code_index, index_stats, explain_index_file
-from .audit import audit_report, clear_audit, history_report, clear_history, task_detail
+from .audit import audit_report, clear_audit, history_report, clear_history, task_detail, latest_task_id, log_subagent_event
 from .gittools import git_status, git_files, git_diff, git_diff_cached, git_add, git_unstage, git_branch, git_commit, git_init, git_log, git_show, git_restore, git_commit_dry, git_safe_directory
 from .memory import load_memory, clear_memory, remember
 from .checkpoints import list_checkpoints, load_checkpoint, delete_checkpoint, clear_checkpoints
@@ -31,6 +33,7 @@ from .project_context import (
     get_active_project,
     set_active_project,
     create_project,
+    apply_project_template,
     clone_project,
     rename_project,
     delete_project,
@@ -50,6 +53,8 @@ COMMANDS = {
     "/help [COMMAND]": "Show help or details for one command",
     "/dashboard": "Show status dashboard",
     "/doctor": "Run local health checks and diagnostics",
+    "/smoketest": "Run quick health + plugin + command checks",
+    "/releasecheck": "Run docs/tests/smoke/consistency checks in one step",
     "/models": "Show selected provider::model routes",
     "/discover": "Smart discover using cache, ranking, and early stop",
     "/discoverfull": "Force full discovery without cache or early stop",
@@ -82,7 +87,7 @@ COMMANDS = {
     "/readlines FILE": "Read file with line numbers",
     "/projects": "List projects under workspace",
     "/project NAME": "Switch active project",
-    "/projectnew NAME": "Create and switch to a project",
+    "/projectnew NAME [--template python-cli|tkinter|api]": "Create and switch to a project, optionally scaffolding a template",
     "/projectclone SRC DEST": "Clone a project and switch to the clone",
     "/projectinfo [NAME]": "Show project information",
     "/projectrename OLD NEW": "Rename a project",
@@ -144,13 +149,14 @@ COMMANDS = {
 }
 
 PLUGIN_MANAGER = get_plugin_manager()
+_COMMAND_REFERENCE_CACHE = None
 
 HELP_SECTIONS = [
     ("General", [
-        "/help", "/dashboard", "/doctor", "/usage", "/verbose LEVEL", "/temperature N", "/clear", "/restart", "/exit",
+        "/help", "/dashboard", "/doctor", "/smoketest", "/releasecheck", "/usage", "/verbose LEVEL", "/temperature N", "/clear", "/restart", "/exit",
     ]),
     ("Projects", [
-        "/projects", "/project NAME", "/projectnew NAME", "/projectclone SRC DEST",
+        "/projects", "/project NAME", "/projectnew NAME [--template python-cli|tkinter|api]", "/projectclone SRC DEST",
         "/projectinfo [NAME]", "/projectrename OLD NEW", "/projectdelete NAME", "/projectpath",
     ]),
     ("Models", [
@@ -229,6 +235,7 @@ def print_help():
             for cmd, desc in uncategorized:
                 table.add_row(cmd, desc)
             ui.console.print(table)
+        ui.info("Use /help <command> for full docs from COMMAND_REFERENCE.md.")
     else:
         print("\nAvailable commands:\n")
         for title, items in section_map.items():
@@ -241,6 +248,7 @@ def print_help():
             print("Other")
             for cmd, desc in uncategorized:
                 print(f"{cmd:<28} {desc}")
+        print("\nUse /help <command> for full docs from COMMAND_REFERENCE.md.")
         print()
 
 
@@ -258,7 +266,56 @@ def help_matches(query):
     return sorted(matches, key=lambda item: (command_base(item[0]) != f"/{q}", command_base(item[0])))
 
 
+def _load_command_reference():
+    global _COMMAND_REFERENCE_CACHE
+    if _COMMAND_REFERENCE_CACHE is not None:
+        return _COMMAND_REFERENCE_CACHE
+
+    ref_path = config.ROOT / "COMMAND_REFERENCE.md"
+    if not ref_path.exists():
+        _COMMAND_REFERENCE_CACHE = {}
+        return _COMMAND_REFERENCE_CACHE
+
+    text = ref_path.read_text(encoding="utf-8", errors="replace")
+    pattern = re.compile(r"^- `(/[^`]+)`\s*$", re.MULTILINE)
+    matches = list(pattern.finditer(text))
+    entries = {}
+    for i, match in enumerate(matches):
+        signature = match.group(1).strip()
+        start = match.start()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        block = text[start:end].strip()
+        entries[signature] = block
+    _COMMAND_REFERENCE_CACHE = entries
+    return _COMMAND_REFERENCE_CACHE
+
+
+def _reference_matches(query):
+    q = query.strip().lower().lstrip("/")
+    if not q:
+        return []
+    entries = _load_command_reference()
+    if not entries:
+        return []
+
+    rows = []
+    for signature, block in entries.items():
+        base = command_base(signature).lstrip("/").lower()
+        full = signature.lstrip("/").lower()
+        if q == base or q == full or q in base or q in full:
+            rows.append((signature, block))
+    return sorted(rows, key=lambda item: (command_base(item[0]).lstrip("/").lower() != q, command_base(item[0])))
+
+
 def help_topic_text(query):
+    ref = _reference_matches(query)
+    if ref:
+        if len(ref) == 1:
+            return ref[0][1]
+        lines = [f"Detailed matches for '{query}':"]
+        lines.extend(block for _sig, block in ref)
+        return "\n\n".join(lines)
+
     matches = help_matches(query)
     if not matches:
         return f"No help found for: {query}"
@@ -404,6 +461,29 @@ def parse_edit_spec(spec):
 
     instruction = " ".join(instruction_parts).strip() or None
     return target, instruction, preview, None
+
+
+def parse_projectnew_spec(spec):
+    tokens = shlex.split(str(spec or ""), posix=True)
+    if not tokens:
+        return None, None, "Usage: /projectnew NAME [--template python-cli|tkinter|api]"
+    name = tokens[0].strip()
+    if not name or name.startswith("--"):
+        return None, None, "Usage: /projectnew NAME [--template python-cli|tkinter|api]"
+    template = None
+    i = 1
+    while i < len(tokens):
+        token = tokens[i]
+        if token == "--template":
+            if i + 1 >= len(tokens):
+                return None, None, "Missing value for --template"
+            template = tokens[i + 1].strip().lower()
+            i += 2
+            continue
+        return None, None, f"Unknown option: {token}"
+    if template and template not in {"python-cli", "tkinter", "api"}:
+        return None, None, "Invalid template. Use: python-cli, tkinter, api"
+    return name, template, None
 
 
 def parse_asksubagent_spec(spec):
@@ -571,6 +651,13 @@ def parse_worker_patch_payload(content):
         raise ValueError(f"Worker must return JSON patches: {exc}") from exc
     if not isinstance(data, dict):
         raise ValueError("Worker patch payload must be a JSON object")
+    payload_version = data.get("payload_version")
+    try:
+        payload_version = int(payload_version)
+    except Exception as exc:
+        raise ValueError("Worker patch payload must include integer payload_version=1") from exc
+    if payload_version != 1:
+        raise ValueError(f"Unsupported worker patch payload_version: {payload_version}. Expected 1.")
     target = str(data.get("target_file", data.get("scope", "")) or "").strip()
     patches = data.get("patches")
     if not isinstance(patches, list) or not patches:
@@ -596,6 +683,7 @@ def parse_worker_patch_payload(content):
             "create_file": create_file,
         })
     return {
+        "payload_version": payload_version,
         "target_file": target,
         "scope": str(data.get("scope", "") or "").strip(),
         "summary": str(data.get("summary", "") or "").strip(),
@@ -714,6 +802,80 @@ def export_worker_patch_file(payload, resolved_patches):
     return out
 
 
+def verify_worker_targets_unchanged(original_snapshots):
+    from .tools.files import safe_path
+
+    for file_target, snap in (original_snapshots or {}).items():
+        if isinstance(snap, dict):
+            existed_before = bool(snap.get("exists", False))
+            before_text = str(snap.get("text", ""))
+        else:
+            existed_before = True
+            before_text = str(snap)
+        path = safe_path(file_target)
+        exists_now = path.exists()
+        if exists_now != existed_before:
+            raise RuntimeError(
+                f"Conflict detected for '{file_target}': file existence changed before apply."
+            )
+        if existed_before:
+            now_text = read_text_file(file_target)
+            if now_text.startswith(("File does not", "Access denied", "File too large")):
+                raise RuntimeError(now_text)
+            if now_text != before_text:
+                raise RuntimeError(
+                    f"Conflict detected for '{file_target}': file content changed before apply."
+                )
+
+
+def apply_worker_changes_transactional(original_snapshots, proposed_text_map):
+    from .tools.files import safe_path
+
+    originals = {}
+    write_order = []
+    for file_target in sorted(proposed_text_map.keys()):
+        snap = (original_snapshots or {}).get(file_target, {"exists": False, "text": ""})
+        if isinstance(snap, dict):
+            existed_before = bool(snap.get("exists", False))
+            before_text = str(snap.get("text", ""))
+        else:
+            existed_before = True
+            before_text = str(snap)
+        originals[file_target] = {
+            "exists": existed_before,
+            "text": before_text,
+        }
+        write_order.append(file_target)
+
+    written = []
+    try:
+        for file_target in write_order:
+            text_to_write = proposed_text_map[file_target]
+            before_text = originals.get(file_target, {}).get("text", "")
+            if before_text.endswith("\n") and not text_to_write.endswith("\n"):
+                text_to_write += "\n"
+            write_text_file(file_target, text_to_write)
+            written.append(file_target)
+    except Exception as exc:
+        rollback_errors = []
+        for file_target in reversed(written):
+            try:
+                original = originals.get(file_target, {"exists": False, "text": ""})
+                if not bool(original.get("exists", False)):
+                    path = safe_path(file_target)
+                    if path.exists():
+                        path.unlink()
+                else:
+                    write_text_file(file_target, original.get("text", ""))
+            except Exception as rb_exc:
+                rollback_errors.append(f"{file_target}: {rb_exc}")
+        if rollback_errors:
+            raise RuntimeError(
+                f"{exc}\nRollback encountered errors:\n" + "\n".join(rollback_errors)
+            ) from exc
+        raise RuntimeError(str(exc)) from exc
+
+
 def run_worker_subagent(runtime, state, spec):
     role, prompt, task_id, include_task_context, target_file, scope_path, preview, err = parse_asksubagent_spec(spec)
     if err:
@@ -744,20 +906,37 @@ def run_worker_subagent(runtime, state, spec):
         include_task_context=include_task_context,
     )
     scope_display = scope_path or target_norm
-    result = run_subagent(
-        runtime.client,
-        state,
+    try:
+        result = run_subagent(
+            runtime.client,
+            state,
+            role,
+            prompt,
+            context={
+                "target_file": target_norm if target_file else "",
+                "scope_path": scope_display,
+                "ownership": "Only files inside this scope may be modified.",
+                "current_content": file_text_map.get(target_norm, ""),
+                "current_content_with_line_numbers": read_file_with_line_numbers(target_norm) if target_norm in file_text_map else "",
+                "scope_tree": prompt_scope_text or None,
+            },
+            task_context=task_context,
+        )
+    except Exception as exc:
+        return f"Worker subagent failed: {exc}"
+    current_task_id = latest_task_id()
+    log_subagent_event(
+        current_task_id,
         role,
-        prompt,
-        context={
+        "response_received",
+        {
             "target_file": target_norm if target_file else "",
             "scope_path": scope_display,
-            "ownership": "Only files inside this scope may be modified.",
-            "current_content": file_text_map.get(target_norm, ""),
-            "current_content_with_line_numbers": read_file_with_line_numbers(target_norm) if target_norm in file_text_map else "",
-            "scope_tree": prompt_scope_text or None,
+            "preview": bool(preview),
+            "route": result.get("route"),
+            "provider": result.get("provider"),
+            "model": result.get("model"),
         },
-        task_context=task_context,
     )
 
     try:
@@ -781,16 +960,21 @@ def run_worker_subagent(runtime, state, spec):
         if bool(patch.get("create_file", False))
     }
     diffs = []
+    original_snapshots = {}
     for file_target in sorted(proposed_text_map):
         before_text = file_text_map.get(file_target)
         if before_text is None:
             if file_target in created_files:
                 before_text = ""
+                original_snapshots[file_target] = {"exists": False, "text": ""}
             else:
                 before_text = read_text_file(file_target)
                 if before_text.startswith(("File does not", "Access denied", "File too large")):
                     return before_text
                 file_text_map[file_target] = before_text
+                original_snapshots[file_target] = {"exists": True, "text": before_text}
+        else:
+            original_snapshots[file_target] = {"exists": True, "text": before_text}
         after_text = proposed_text_map[file_target]
         if before_text == after_text:
             continue
@@ -809,23 +993,33 @@ def run_worker_subagent(runtime, state, spec):
         )
     diff = "\n".join(chunk for chunk in diffs if chunk)
     if not diff:
+        log_subagent_event(current_task_id, role, "no_changes", {"patches": len(resolved_patches)})
         return "No changes were made."
     ui.table("Worker Patch Preview", worker_patch_preview_rows(payload, resolved_patches, proposed_text_map))
     print(diff[:12000])
 
     if preview:
         summary = payload.get("summary") or subagent_result_text(result)
+        log_subagent_event(current_task_id, role, "preview_only", {"patches": len(resolved_patches), "files": sorted(proposed_text_map.keys())})
         return f"Preview complete. No changes applied.\n{summary}"
 
     if input(ui.cyan("Keep these changes? [y/N]: ")).strip().lower() != "y":
+        log_subagent_event(current_task_id, role, "rejected", {"patches": len(resolved_patches)})
         return "Changes rolled back."
 
     export_path = export_worker_patch_file(payload, resolved_patches)
-    for file_target, text_to_write in proposed_text_map.items():
-        before_text = file_text_map.get(file_target, "")
-        if before_text.endswith("\n") and not text_to_write.endswith("\n"):
-            text_to_write += "\n"
-        write_text_file(file_target, text_to_write)
+    try:
+        verify_worker_targets_unchanged(original_snapshots)
+        apply_worker_changes_transactional(original_snapshots, proposed_text_map)
+    except Exception as exc:
+        log_subagent_event(current_task_id, role, "apply_failed", {"error": str(exc)})
+        return f"Transactional apply failed. Changes rolled back.\n{exc}"
+    log_subagent_event(
+        current_task_id,
+        role,
+        "applied",
+        {"patches": len(resolved_patches), "files": sorted(proposed_text_map.keys()), "export_path": str(export_path)},
+    )
     return f"Changes kept. Patch export: {export_path}"
 
 
@@ -1083,6 +1277,102 @@ def doctor_report(state):
     return "\n".join(lines)
 
 
+def smoketest_report(state):
+    checks = []
+    checks.append(("doctor output available", bool(doctor_report(state).strip()), "doctor"))
+    checks.append(("plugin loader has no errors", not bool(PLUGIN_MANAGER.errors), f"errors={len(PLUGIN_MANAGER.errors)}"))
+    checks.append(("plugin registry loaded", bool(PLUGIN_MANAGER.commands or PLUGIN_MANAGER.hooks), f"commands={len(PLUGIN_MANAGER.commands)} hooks={sum(len(v) for v in PLUGIN_MANAGER.hooks.values())}"))
+    checks.append(("active project path exists", current_project_root().exists(), str(current_project_root())))
+    checks.append(("core command map contains key commands", all(is_valid_command(cmd) for cmd in ["/help", "/doctor", "/projectpath", "/tests"]), "command-map"))
+
+    failed = [c for c in checks if not c[1]]
+    status = "PASS" if not failed else "WARN"
+    lines = [f"Smoketest: {status}", f"Active project: {getattr(state, 'active_project', '')}"]
+    for name, ok, detail in checks:
+        lines.append(f"- {name}: {'OK' if ok else 'WARN'} ({detail})")
+    if failed:
+        lines.append("")
+        lines.append("Review warnings above before production usage.")
+    return "\n".join(lines)
+
+
+def releasecheck_report(state):
+    details = []
+    checks = []
+
+    # Docs presence + parse
+    ref_path = config.ROOT / "COMMAND_REFERENCE.md"
+    docs_ok = ref_path.exists() and bool(ref_path.read_text(encoding="utf-8", errors="replace").strip())
+    checks.append(("command reference exists", docs_ok, str(ref_path)))
+
+    # Command-doc consistency
+    ref_entries = _load_command_reference()
+    missing_docs = sorted(set(COMMANDS.keys()) - set(ref_entries.keys()))
+    consistency_ok = not missing_docs
+    checks.append(("command-doc consistency", consistency_ok, f"missing={len(missing_docs)}"))
+    if missing_docs:
+        details.append("Missing command docs:")
+        details.extend(f"- {m}" for m in missing_docs[:20])
+
+    # Smoketest status
+    smoke = smoketest_report(state)
+    smoke_ok = smoke.startswith("Smoketest: PASS")
+    checks.append(("smoketest status", smoke_ok, "PASS" if smoke_ok else "WARN"))
+
+    # Unit tests
+    test_result = run_shell_command_result("python -m unittest discover -s tests -v")
+    tests_ok = bool(test_result.ok)
+    checks.append(("unit test suite", tests_ok, f"exit={test_result.code if test_result.code is not None else 'n/a'}"))
+    if not tests_ok:
+        details.append("")
+        details.append("Unit test output:")
+        details.append(str(test_result.message)[:2000])
+
+    failed = [c for c in checks if not c[1]]
+    status = "PASS" if not failed else "WARN"
+    lines = [f"Releasecheck: {status}", f"Active project: {getattr(state, 'active_project', '')}"]
+    for name, ok, detail in checks:
+        lines.append(f"- {name}: {'OK' if ok else 'WARN'} ({detail})")
+    if details:
+        lines.append("")
+        lines.extend(details)
+    lines.append("")
+    lines.append("Smoke summary:")
+    lines.append(smoke)
+    report_text = "\n".join(lines)
+    if failed:
+        artifact_path = create_releasecheck_artifact(state, doctor_report(state), smoke, report_text)
+        lines.append("")
+        lines.append(f"CI artifact pack: {artifact_path}")
+        report_text = "\n".join(lines)
+    return report_text
+
+
+def create_releasecheck_artifact(state, doctor_text, smoke_text, releasecheck_text):
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    active_project = str(getattr(state, "active_project", "unknown") or "unknown")
+    out_dir = config.LOG_DIR / "releasecheck"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    zip_path = out_dir / f"{active_project}-{stamp}.zip"
+
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("doctor.txt", str(doctor_text or ""))
+        zf.writestr("smoketest.txt", str(smoke_text or ""))
+        zf.writestr("releasecheck.txt", str(releasecheck_text or ""))
+        for src, arc in [
+            (project_task_history_file(), "logs/task_history.jsonl"),
+            (project_tool_audit_file(), "logs/tool_audit.jsonl"),
+            (project_session_file(), "state/.agent_session.json"),
+            (project_memory_file(), "state/.agent_memory.json"),
+        ]:
+            try:
+                if src.exists() and src.is_file():
+                    zf.write(src, arcname=arc)
+            except Exception:
+                continue
+    return str(zip_path)
+
+
 def projects_text(active_project):
     projects = list_projects()
     if not projects:
@@ -1279,6 +1569,12 @@ def handle_exact_command(user_input, state, runtime):
         return True
     if user_input == "/doctor":
         print(doctor_report(state))
+        return True
+    if user_input == "/smoketest":
+        print(smoketest_report(state))
+        return True
+    if user_input == "/releasecheck":
+        print(releasecheck_report(state))
         return True
     if user_input == "/models":
         print("\n".join(state.routes))
@@ -1516,7 +1812,14 @@ def handle_prefixed_command(user_input, state, runtime):
         return True
     if user_input.startswith("/projectnew "):
         try:
-            activate_project(state, runtime, user_input.split(" ", 1)[1].strip(), create_project)
+            name, template, err = parse_projectnew_spec(user_input.split(" ", 1)[1].strip())
+            if err:
+                ui.warn(err)
+            else:
+                activate_project(state, runtime, name, create_project)
+                if template:
+                    result = apply_project_template(state.active_project, template)
+                    ui.success(result)
         except Exception as e:
             ui.error(str(e))
         return True

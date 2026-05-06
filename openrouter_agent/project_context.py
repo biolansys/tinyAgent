@@ -119,6 +119,69 @@ def create_project(name: str) -> str:
     return _active_project
 
 
+def _write_if_missing(path: Path, content: str) -> None:
+    if path.exists():
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+
+def apply_project_template(name: str, template: str) -> str:
+    tpl = str(template or "").strip().lower()
+    if not tpl:
+        return "No template selected."
+    root = project_root(name)
+    if not root.exists() or not root.is_dir():
+        raise ValueError(f"Project does not exist: {name}")
+
+    templates = {"python-cli", "tkinter", "api"}
+    if tpl not in templates:
+        raise ValueError(f"Unknown template: {template}. Use one of: python-cli, tkinter, api")
+
+    if tpl == "python-cli":
+        _write_if_missing(
+            root / "app.py",
+            "def main():\n    print('Hello from python-cli template')\n\n\nif __name__ == '__main__':\n    main()\n",
+        )
+        _write_if_missing(root / "requirements.txt", "")
+        _write_if_missing(
+            root / "tests" / "test_app.py",
+            "import app\n\n\ndef test_main_exists():\n    assert callable(app.main)\n",
+        )
+        return "Template applied: python-cli"
+
+    if tpl == "tkinter":
+        _write_if_missing(
+            root / "tkinter_app.py",
+            "import tkinter as tk\n\n\ndef main():\n    root = tk.Tk()\n    root.title('Tkinter App')\n    root.geometry('600x400')\n    root.mainloop()\n\n\nif __name__ == '__main__':\n    main()\n",
+        )
+        _write_if_missing(root / "tk_specs" / "__init__.py", "")
+        _write_if_missing(
+            root / "tk_specs" / "system_info.py",
+            "def get_system_info():\n    return {'status': 'ok'}\n",
+        )
+        _write_if_missing(
+            root / "tk_specs" / "ui.py",
+            "def build_ui():\n    return 'ui'\n",
+        )
+        _write_if_missing(
+            root / "tests" / "test_system_info.py",
+            "from tk_specs.system_info import get_system_info\n\n\ndef test_system_info_status():\n    assert get_system_info().get('status') == 'ok'\n",
+        )
+        return "Template applied: tkinter"
+
+    _write_if_missing(
+        root / "app.py",
+        "def handle_health():\n    return {'status': 'ok'}\n",
+    )
+    _write_if_missing(root / "requirements.txt", "")
+    _write_if_missing(
+        root / "tests" / "test_api_smoke.py",
+        "import app\n\n\ndef test_health_handler():\n    assert app.handle_health().get('status') == 'ok'\n",
+    )
+    return "Template applied: api"
+
+
 def clone_project(source_name: str, target_name: str) -> str:
     global _active_project
     source_root = project_root(source_name)

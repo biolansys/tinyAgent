@@ -95,6 +95,7 @@ Subagents are specialized helper roles that the app can invoke on demand to hand
 
 - `plan`, `review`, and `search` are read-only specialist subagents.
 - `worker` is the write-capable subagent, but only inside an explicit `--file` or `--scope`.
+- Subagents run tool-free (no direct tool calls from subagents).
 - They are managed by the app, not run separately by the user.
 
 Use them with `/asksubagent`:
@@ -111,6 +112,41 @@ Optional flags:
 - `--no-task` to disable task context
 - `--preview` to avoid applying worker changes
 
+Current safety and runtime controls:
+
+- Role validation is strict: only `plan`, `review`, `search`, `worker`.
+- Timeout guard applies to every subagent call (global + per-role defaults in config).
+- Response-size guard rejects oversized subagent output.
+- Worker output must be strict JSON with `payload_version: 1`.
+- Worker patches must stay inside declared ownership (`--file` or `--scope`).
+- Worker apply requires explicit confirmation before writing files.
+- Conflict detection runs before apply (detects if target files changed since preview).
+- Apply is transactional with rollback on failure.
+- Worker lifecycle is audit-logged as `subagent_event` entries.
+
+Worker payload contract (current):
+
+- Required top-level fields:
+  - `payload_version` (must be integer `1`)
+  - `summary`
+  - `patches` (array)
+- Optional targeting fields:
+  - `target_file` (single-file mode)
+  - `scope` (scope mode)
+- Each patch item must include:
+  - `target_file`
+  - `start_line`
+  - `end_line`
+  - `new_text`
+- New file creation uses `start_line=0` and `end_line=0` with full file contents in `new_text`.
+
+`/runplan` integration:
+
+- `/runplan` (without argument) defaults to `RUNPLAN.md`.
+- `/runplan FILE` uses the provided file.
+- In both cases it asks for confirmation before execution.
+- Plan file lines are restricted to `/asksubagent ...` commands only.
+
 Best practice:
 
 - Use `plan` first for large tasks.
@@ -125,11 +161,11 @@ Best practice:
 | Purpose | Runs the user’s task end to end | Analyzes and critiques | Proposes and applies scoped edits |
 | User entrypoint | Normal free-form prompt, `/fix`, `/tests`, `/edit`, etc. | `/asksubagent review ...` | `/asksubagent worker ...` |
 | Can write files | Yes | No | Yes, but only inside declared scope |
-| Can run tools | Yes | No tools for subagents in current design | No direct tools; patch-based edits only |
+| Can run tools | Yes | No direct tools | No direct tools; patch-based edits only |
 | Scope control | Broadest, based on task and app rules | Read-only scope from context | Strict `--file FILE` or `--scope PATH` |
 | Output style | Final task result, step logs, review/fix loops | Text analysis and recommendations | Structured JSON patches + diff preview |
-| Confirmation | Depends on tool/gith safety rules | Not needed, read-only | Required before applying changes |
-| Safety model | Full app safety stack applies | Safest role | Constrained by ownership validation |
+| Confirmation | Depends on tool/git safety rules | Not needed, read-only | Required before applying changes |
+| Safety model | Full app safety stack applies | Safest role | Ownership validation + schema validation + conflict check + transactional rollback |
 | Context used | Full runtime task context, project state, history, checkpoints | Current project + optional task context | Target file/scope + current file contents + optional task context |
 | Typical use | Full workflow orchestration | Second opinion | Controlled code changes |
 | Best for | Full workflow orchestration | Check bugs, regressions, design issues | Edit one file or bounded set of files |

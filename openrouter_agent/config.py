@@ -65,6 +65,14 @@ DRY_RUN = False
 TOOL_AUDIT_FILE = LOG_DIR / "tool_audit.jsonl"
 TASK_HISTORY_FILE = LOG_DIR / "task_history.jsonl"
 MAX_SAVED_COMMAND_HISTORY = 50
+SUBAGENT_MAX_RESPONSE_CHARS = 120_000
+SUBAGENT_TIMEOUT_SECONDS = 90
+SUBAGENT_ROLE_TIMEOUT_SECONDS = {
+    "plan": 60,
+    "review": 60,
+    "search": 60,
+    "worker": 120,
+}
 
 IGNORE_DIRS = {
     ".git", "__pycache__", ".venv", "venv", "node_modules",

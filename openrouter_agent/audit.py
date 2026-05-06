@@ -57,6 +57,22 @@ def log_tool_call(task_id, name, args, result):
     })
 
 
+def log_subagent_event(task_id, role, event, data=None):
+    payload = {
+        "type": "subagent_event",
+        "task_id": task_id,
+        "project": get_active_project(),
+        "time": datetime.now().isoformat(timespec="seconds"),
+        "role": str(role or "").strip(),
+        "event": str(event or "").strip(),
+    }
+    if isinstance(data, dict):
+        payload["data"] = data
+    elif data is not None:
+        payload["data"] = {"value": str(data)}
+    _append_jsonl(project_tool_audit_file(), payload)
+
+
 def read_jsonl(path, limit=20):
     if not path.exists():
         return []

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from typing import Any
 
+from . import config
 from .audit import task_context as load_task_context
 
 
@@ -146,11 +148,34 @@ def _extract_message_content(data: dict[str, Any]) -> str:
     return str(content)
 
 
+def _resolve_subagent_timeout(role: str) -> int:
+    role_timeouts = getattr(config, "SUBAGENT_ROLE_TIMEOUT_SECONDS", {}) or {}
+    try:
+        value = int(role_timeouts.get(role, config.SUBAGENT_TIMEOUT_SECONDS))
+    except Exception:
+        value = int(getattr(config, "SUBAGENT_TIMEOUT_SECONDS", 90) or 90)
+    return max(1, value)
+
+
+def _chat_without_tools_with_timeout(client: Any, messages: list[dict[str, str]], timeout_seconds: int) -> dict[str, Any]:
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        fut = pool.submit(client.chat, messages, None, True)
+        try:
+            return fut.result(timeout=timeout_seconds)
+        except FutureTimeoutError as exc:
+            fut.cancel()
+            raise TimeoutError(f"Subagent timed out after {timeout_seconds}s") from exc
+
+
 def run_subagent(client: Any, state: Any, role: Any, prompt: Any, context: Any = None, task_context: Any = None) -> dict[str, Any]:
     normalized_role = normalize_subagent_role(role)
     messages = build_subagent_messages(state, normalized_role, prompt, context=context, task_context=task_context)
-    data = client.chat(messages, tools=None, force_no_tools=True)
+    timeout_seconds = _resolve_subagent_timeout(normalized_role)
+    data = _chat_without_tools_with_timeout(client, messages, timeout_seconds)
     content = _extract_message_content(data)
+    max_chars = int(getattr(config, "SUBAGENT_MAX_RESPONSE_CHARS", 120000) or 120000)
+    if len(content) > max_chars:
+        raise ValueError(f"Subagent response too large ({len(content)} chars > {max_chars}).")
     return {
         "role": normalized_role,
         "prompt": str(prompt).strip(),
@@ -163,6 +188,7 @@ def run_subagent(client: Any, state: Any, role: Any, prompt: Any, context: Any =
         "model": data.get("_model"),
         "tools_enabled": bool(data.get("_tools_enabled", False)),
         "raw": data,
+        "timeout_seconds": timeout_seconds,
     }
 
 

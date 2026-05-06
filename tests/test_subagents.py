@@ -1,4 +1,5 @@
 import unittest
+import time
 from types import SimpleNamespace
 
 from openrouter_agent.subagents import (
@@ -111,6 +112,37 @@ class SubagentTests(unittest.TestCase):
 
     def test_allowed_roles_are_small_and_fixed(self):
         self.assertEqual(("plan", "review", "search", "worker"), SUBAGENT_ROLES)
+
+    def test_run_subagent_enforces_response_size_limit(self):
+        response = {
+            "_route": "openrouter::test-model",
+            "_provider": "openrouter",
+            "_model": "test-model",
+            "_tools_enabled": False,
+            "choices": [{"message": {"content": "x" * 5000}}],
+        }
+        client = FakeClient(response)
+        state = SimpleNamespace(active_project="demo", provider_mode="auto")
+        with unittest.mock.patch("openrouter_agent.subagents.config.SUBAGENT_MAX_RESPONSE_CHARS", 100):
+            with self.assertRaises(ValueError):
+                run_subagent(client, state, "review", "Check this")
+
+    def test_run_subagent_timeout(self):
+        class SlowClient:
+            def chat(self, _messages, tools=None, force_no_tools=False):
+                time.sleep(0.2)
+                return {
+                    "_tools_enabled": False,
+                    "choices": [{"message": {"content": "ok"}}],
+                }
+
+        state = SimpleNamespace(active_project="demo", provider_mode="auto")
+        with unittest.mock.patch("openrouter_agent.subagents._resolve_subagent_timeout", return_value=1), unittest.mock.patch(
+            "openrouter_agent.subagents._chat_without_tools_with_timeout",
+            side_effect=TimeoutError("Subagent timed out after 1s"),
+        ):
+            with self.assertRaises(TimeoutError):
+                run_subagent(SlowClient(), state, "plan", "Outline")
 
 
 if __name__ == "__main__":
