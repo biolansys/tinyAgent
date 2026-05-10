@@ -264,12 +264,12 @@
     "last_used": "2026-05-01T09:32:27"
   },
   "huggingface::Qwen/Qwen3-Coder-480B-A35B-Instruct": {
-    "attempts": 8,
-    "successes": 6,
+    "attempts": 13,
+    "successes": 11,
     "failures": 2,
-    "total_latency": 8.989343166351318,
+    "total_latency": 12.412472486495972,
     "last_error": "",
-    "last_used": "2026-05-02T09:44:17"
+    "last_used": "2026-05-11T00:04:05"
   },
   "huggingface::meta-llama/Llama-3.1-8B-Instruct": {
     "attempts": 3,
@@ -288,12 +288,12 @@
     "last_used": "2026-05-01T09:32:00"
   },
   "huggingface::Qwen/Qwen2.5-Coder-32B-Instruct": {
-    "attempts": 5,
-    "successes": 3,
+    "attempts": 10,
+    "successes": 8,
     "failures": 2,
-    "total_latency": 1.7588562965393066,
+    "total_latency": 4.705926418304443,
     "last_error": "",
-    "last_used": "2026-05-02T09:44:17"
+    "last_used": "2026-05-11T00:04:06"
   },
   "mistral::codestral-2508": {
     "attempts": 1,
@@ -312,28 +312,28 @@
     "last_used": "2026-05-01T09:31:40"
   },
   "mistral::devstral-medium-2507": {
-    "attempts": 9,
-    "successes": 8,
+    "attempts": 14,
+    "successes": 13,
     "failures": 1,
-    "total_latency": 10.892820835113525,
+    "total_latency": 12.442275762557983,
     "last_error": "",
-    "last_used": "2026-05-02T09:44:13"
+    "last_used": "2026-05-11T00:04:04"
   },
   "mistral::devstral-medium-latest": {
-    "attempts": 376,
-    "successes": 375,
-    "failures": 1,
-    "total_latency": 1935.0025267601013,
+    "attempts": 1970,
+    "successes": 1967,
+    "failures": 3,
+    "total_latency": 8145.406967878342,
     "last_error": "",
-    "last_used": "2026-05-02T11:45:37"
+    "last_used": "2026-05-11T00:04:05"
   },
   "mistral::devstral-small-2507": {
-    "attempts": 117,
-    "successes": 114,
+    "attempts": 122,
+    "successes": 119,
     "failures": 3,
-    "total_latency": 134.2402012348175,
+    "total_latency": 136.51587510108948,
     "last_error": "",
-    "last_used": "2026-05-02T09:44:13"
+    "last_used": "2026-05-11T00:04:04"
   },
   "mistral::magistral-medium-2509": {
     "attempts": 1,
@@ -360,12 +360,12 @@
     "last_used": "2026-05-01T09:31:42"
   },
   "mistral::magistral-small-latest": {
-    "attempts": 584,
-    "successes": 582,
+    "attempts": 1360,
+    "successes": 1358,
     "failures": 2,
-    "total_latency": 1182.2495872974396,
+    "total_latency": 2185.4233889579773,
     "last_error": "",
-    "last_used": "2026-05-02T09:44:13"
+    "last_used": "2026-05-11T00:04:04"
   },
   "mistral::mistral-large-2411": {
     "attempts": 4,
