@@ -459,13 +459,13 @@ class CliTests(unittest.TestCase):
                 "\n"
                 "/asksubagent review \"Review the design.\"\n"
             ),
-        ), patch("builtins.input", return_value="y"), patch("openrouter_agent.cli.handle_prefixed_command", return_value=True) as mock_handle, patch(
+        ), patch("builtins.input", return_value="y"), patch("openrouter_agent.cli.run_plan_subagent_step", return_value=(True, "")) as mock_step, patch(
             "openrouter_agent.cli.ui.panel"
         ) as mock_panel:
             result = cli.run_plan_file(runtime, state, "workspace/alpha/subagent_plan.md")
 
         self.assertEqual("Plan completed. Executed 2 subagent command(s).", result)
-        self.assertEqual(2, mock_handle.call_count)
+        self.assertEqual(2, mock_step.call_count)
         mock_panel.assert_called()
 
     def test_run_plan_file_rejects_non_subagent_lines(self):
@@ -484,6 +484,17 @@ class CliTests(unittest.TestCase):
             handled = cli.handle_prefixed_command("/runplan subagent_plan.md", state, runtime)
         self.assertTrue(handled)
         mock_print.assert_called_once_with("Plan completed.")
+    
+    def test_handle_prefixed_command_runplan_with_from_option(self):
+        state = make_state()
+        runtime = make_runtime()
+        with patch("openrouter_agent.cli.run_plan_file", return_value="Plan completed.") as mock_run, patch(
+            "builtins.print"
+        ) as mock_print:
+            handled = cli.handle_prefixed_command("/runplan RUNPLAN.md --from 3", state, runtime)
+        self.assertTrue(handled)
+        mock_run.assert_called_once_with(runtime, state, "RUNPLAN.md", from_step=3)
+        mock_print.assert_called_once_with("Plan completed.")
 
     def test_runplan_without_path_uses_default_runplan_md(self):
         state = make_state()
@@ -491,9 +502,57 @@ class CliTests(unittest.TestCase):
         with patch("builtins.input", return_value="y"), patch(
             "openrouter_agent.cli.read_text_file",
             return_value="/asksubagent review \"ok\"\n",
-        ), patch("openrouter_agent.cli.handle_prefixed_command", return_value=True):
+        ), patch("openrouter_agent.cli.run_plan_subagent_step", return_value=(True, "")):
             result = cli.run_plan_file(runtime, state, "")
         self.assertIn("Plan completed. Executed 1 subagent command", result)
+
+    def test_runplan_from_step_executes_subset(self):
+        state = make_state()
+        runtime = make_runtime()
+        with patch("builtins.input", return_value="y"), patch(
+            "openrouter_agent.cli.read_text_file",
+            return_value=(
+                "/asksubagent review \"step1\"\n"
+                "/asksubagent review \"step2\"\n"
+                "/asksubagent review \"step3\"\n"
+            ),
+        ), patch("openrouter_agent.cli.run_plan_subagent_step", return_value=(True, "")) as mock_step:
+            result = cli.run_plan_file(runtime, state, "RUNPLAN.md", from_step=2)
+        self.assertIn("Plan completed. Executed 2 subagent command", result)
+        self.assertEqual(2, mock_step.call_count)
+
+    def test_runplan_from_step_rejects_out_of_range(self):
+        state = make_state()
+        runtime = make_runtime()
+        with patch("builtins.input", return_value="y"), patch(
+            "openrouter_agent.cli.read_text_file",
+            return_value="/asksubagent review \"step1\"\n",
+        ):
+            result = cli.run_plan_file(runtime, state, "RUNPLAN.md", from_step=2)
+        self.assertIn("Invalid /runplan --from value", result)
+
+    def test_run_plan_file_stops_when_step_fails(self):
+        state = make_state()
+        runtime = make_runtime()
+        with patch("builtins.input", return_value="y"), patch(
+            "openrouter_agent.cli.read_text_file",
+            return_value="/asksubagent review \"ok\"\n",
+        ), patch("openrouter_agent.cli.run_plan_subagent_step", return_value=(False, "synthetic error")):
+            result = cli.run_plan_file(runtime, state, "")
+        self.assertIn("Plan execution stopped at step 1", result)
+        self.assertIn("synthetic error", result)
+
+    def test_parse_runplan_spec(self):
+        path, from_step, err = cli.parse_runplan_spec("RUNPLAN.md --from 4")
+        self.assertIsNone(err)
+        self.assertEqual("RUNPLAN.md", path)
+        self.assertEqual(4, from_step)
+
+    def test_parse_runplan_spec_requires_valid_from(self):
+        path, from_step, err = cli.parse_runplan_spec("--from x")
+        self.assertIsNone(path)
+        self.assertIsNone(from_step)
+        self.assertIn("Invalid --from value", err)
 
     def test_parse_runtime_flags_headless_and_preapprove(self):
         parsed = cli.parse_runtime_flags(["--headless", "--approve-cmd", "python -m pip install demo-package"])
@@ -693,6 +752,15 @@ class CliTests(unittest.TestCase):
         self.assertEqual(1, len(payload["patches"]))
         self.assertFalse(payload["patches"][0]["create_file"])
 
+    def test_parse_worker_patch_payload_allows_empty_patches_array(self):
+        payload = cli.parse_worker_patch_payload(json.dumps({
+            "payload_version": 1,
+            "scope": ".",
+            "summary": "No critical fixes.",
+            "patches": [],
+        }))
+        self.assertEqual([], payload["patches"])
+
     def test_validate_worker_patch_payload_replaces_requested_range(self):
         root = make_tmp_root("validate-existing")
         (root / "app.py").write_text("line1\nline2\n", encoding="utf-8")
@@ -792,6 +860,149 @@ class CliTests(unittest.TestCase):
                 root.rmdir()
 
         self.assertEqual("print('hello')\n", updated_map["main.py"])
+
+    def test_validate_worker_patch_payload_allows_missing_explicit_file_target(self):
+        root = make_tmp_root("validate-missing-explicit-file")
+        try:
+            with patch("openrouter_agent.tools.files.safe_path") as mock_safe:
+                mock_safe.side_effect = lambda path: root / str(path)
+                resolved = cli.validate_worker_patch_payload(
+                    {},
+                    {
+                        "target_file": "models/entities.py",
+                        "patches": [
+                            {
+                                "target_file": "models/entities.py",
+                                "start_line": 1,
+                                "end_line": 1,
+                                "new_text": "class Customer:\n    pass\n",
+                            }
+                        ],
+                    },
+                    "models/entities.py",
+                    root / "models" / "entities.py",
+                )
+                updated_map = cli.apply_worker_patch_payload({}, resolved, root / "models" / "entities.py")
+        finally:
+            if root.exists():
+                for child in sorted(root.rglob("*"), reverse=True):
+                    if child.is_file():
+                        child.unlink()
+                for child in sorted([p for p in root.rglob("*") if p.is_dir()], reverse=True):
+                    child.rmdir()
+                root.rmdir()
+
+        self.assertEqual("class Customer:\n    pass\n", updated_map["models/entities.py"])
+
+    def test_validate_worker_patch_payload_allows_missing_explicit_file_target_with_different_text_path(self):
+        root = make_tmp_root("validate-missing-explicit-file-alt")
+        try:
+            with patch("openrouter_agent.tools.files.safe_path") as mock_safe:
+                mock_safe.side_effect = lambda path: root / str(path).replace("\\", "/").replace("./", "")
+                resolved = cli.validate_worker_patch_payload(
+                    {},
+                    {
+                        "target_file": "models/entities.py",
+                        "patches": [
+                            {
+                                "target_file": "./models\\entities.py",
+                                "start_line": 3,
+                                "end_line": 3,
+                                "new_text": "class ServiceOrder:\n    pass\n",
+                            }
+                        ],
+                    },
+                    "models/entities.py",
+                    root / "models" / "entities.py",
+                )
+                updated_map = cli.apply_worker_patch_payload({}, resolved, root / "models" / "entities.py")
+        finally:
+            if root.exists():
+                for child in sorted(root.rglob("*"), reverse=True):
+                    if child.is_file():
+                        child.unlink()
+                for child in sorted([p for p in root.rglob("*") if p.is_dir()], reverse=True):
+                    child.rmdir()
+                root.rmdir()
+
+        self.assertEqual("class ServiceOrder:\n    pass\n", updated_map["models/entities.py"])
+
+    def test_apply_worker_patch_payload_allows_multiple_create_patches_for_missing_file(self):
+        root = make_tmp_root("validate-multi-create")
+        try:
+            with patch("openrouter_agent.tools.files.safe_path") as mock_safe:
+                mock_safe.side_effect = lambda path: root / str(path)
+                resolved = cli.validate_worker_patch_payload(
+                    {},
+                    {
+                        "target_file": "models/entities.py",
+                        "patches": [
+                            {
+                                "target_file": "models/entities.py",
+                                "start_line": 0,
+                                "end_line": 0,
+                                "new_text": "first draft\n",
+                            },
+                            {
+                                "target_file": "models/entities.py",
+                                "start_line": 0,
+                                "end_line": 0,
+                                "new_text": "final draft\n",
+                            },
+                        ],
+                    },
+                    "models/entities.py",
+                    root / "models" / "entities.py",
+                )
+                updated_map = cli.apply_worker_patch_payload({}, resolved, root / "models" / "entities.py")
+        finally:
+            if root.exists():
+                for child in sorted(root.rglob("*"), reverse=True):
+                    if child.is_file():
+                        child.unlink()
+                for child in sorted([p for p in root.rglob("*") if p.is_dir()], reverse=True):
+                    child.rmdir()
+                root.rmdir()
+
+        self.assertEqual("final draft\n", updated_map["models/entities.py"])
+
+    def test_apply_worker_patch_payload_allows_zero_zero_replace_for_existing_file(self):
+        root = make_tmp_root("validate-replace-all")
+        (root / "README.md").write_text("line1\nline2\nline3\n", encoding="utf-8")
+        try:
+            with patch("openrouter_agent.tools.files.safe_path") as mock_safe:
+                mock_safe.side_effect = lambda path: root / str(path)
+                resolved = cli.validate_worker_patch_payload(
+                    {"README.md": "line1\nline2\nline3\n"},
+                    {
+                        "scope": ".",
+                        "patches": [
+                            {
+                                "target_file": "README.md",
+                                "start_line": 0,
+                                "end_line": 0,
+                                "new_text": "new readme body\n",
+                            }
+                        ],
+                    },
+                    ".",
+                    root,
+                )
+                updated_map = cli.apply_worker_patch_payload(
+                    {"README.md": "line1\nline2\nline3\n"},
+                    resolved,
+                    root,
+                )
+        finally:
+            if root.exists():
+                for child in sorted(root.rglob("*"), reverse=True):
+                    if child.is_file():
+                        child.unlink()
+                for child in sorted([p for p in root.rglob("*") if p.is_dir()], reverse=True):
+                    child.rmdir()
+                root.rmdir()
+
+        self.assertEqual("new readme body\n", updated_map["README.md"])
 
     def test_worker_patch_preview_rows_summarizes_files(self):
         rows = cli.worker_patch_preview_rows(

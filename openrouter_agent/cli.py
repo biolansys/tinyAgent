@@ -101,7 +101,7 @@ COMMANDS = {
     "/searchcode QUERY": "Search code index",
     "/edit FILE [--instruction TEXT] [--preview]": "Guided edit loop for one file with diff + confirm",
     "/asksubagent ROLE PROMPT [--file FILE] [--task ID] [--no-task] [--preview]": "Run a specialist subagent; worker requires a file",
-    "/runplan [FILE]": "Run a Markdown plan file containing /asksubagent commands (default: RUNPLAN.md)",
+    "/runplan [FILE] [--from N]": "Run a Markdown plan file containing /asksubagent commands (default: RUNPLAN.md), optionally starting from step N",
     "/explain FILE": "Explain a file using the agent",
     "/reviewfile FILE": "Review a file using the agent",
     "/refactor FILE": "Ask agent for safe refactor suggestions",
@@ -178,7 +178,7 @@ HELP_SECTIONS = [
         "/index", "/indexstats", "/searchcode QUERY",
     ]),
     ("Agent Tasks", [
-        "/edit FILE [--instruction TEXT] [--preview]", "/asksubagent ROLE PROMPT [--file FILE] [--task ID] [--no-task] [--preview]", "/runplan [FILE]", "/explain FILE", "/reviewfile FILE", "/refactor FILE", "/fix TEXT", "/tests",
+        "/edit FILE [--instruction TEXT] [--preview]", "/asksubagent ROLE PROMPT [--file FILE] [--task ID] [--no-task] [--preview]", "/runplan [FILE] [--from N]", "/explain FILE", "/reviewfile FILE", "/refactor FILE", "/fix TEXT", "/tests",
     ]),
     ("Git", [
         "/gitstatus", "/gitfiles", "/gitdiff", "/gitdiffcached", "/gitadd", "/gitunstage",
@@ -400,7 +400,7 @@ def plugins_text():
     return "\n".join(lines)
 
 
-def run_plan_file(runtime, state, path):
+def run_plan_file(runtime, state, path, from_step=1):
     from .tools.files import normalize_agent_path
 
     selected_path = (path or "").strip() or "RUNPLAN.md"
@@ -425,13 +425,84 @@ def run_plan_file(runtime, state, path):
     if not lines:
         return f"No runnable commands found in plan file: {plan_path}"
 
-    for index, line in enumerate(lines, start=1):
+    if from_step < 1:
+        return "Invalid /runplan --from value. Use an integer >= 1."
+    if from_step > len(lines):
+        return f"Invalid /runplan --from value: {from_step}. Plan has {len(lines)} step(s)."
+
+    for index, line in enumerate(lines[from_step - 1 :], start=from_step):
         ui.panel(f"{index}. {line}", title="Run Plan Step", style="cyan")
-        if not handle_prefixed_command(line, state, runtime):
-            return f"Plan execution stopped at step {index}: {line}"
+        ok, message = run_plan_subagent_step(line, state, runtime)
+        if not ok:
+            return f"Plan execution stopped at step {index}: {line}\nError: {message}"
         executed += 1
 
     return f"Plan completed. Executed {executed} subagent command(s)."
+
+
+def parse_runplan_spec(spec):
+    tokens = shlex.split(str(spec or ""), posix=True)
+    path = ""
+    from_step = 1
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]
+        if token == "--from":
+            if i + 1 >= len(tokens):
+                return None, None, "Missing value for --from"
+            try:
+                from_step = int(tokens[i + 1])
+            except Exception:
+                return None, None, "Invalid --from value. Use an integer >= 1."
+            i += 2
+            continue
+        if token.startswith("--"):
+            return None, None, f"Unknown option: {token}"
+        if path:
+            return None, None, "Only one plan file path is allowed."
+        path = token
+        i += 1
+    if from_step < 1:
+        return None, None, "Invalid --from value. Use an integer >= 1."
+    return path, from_step, None
+
+
+def run_plan_subagent_step(line, state, runtime):
+    if not str(line).startswith("/asksubagent "):
+        return False, "Only /asksubagent commands are allowed in run plans."
+    spec = str(line).split(" ", 1)[1].strip()
+    try:
+        role = shlex.split(spec, posix=True)[0].strip() if spec else ""
+    except ValueError:
+        return False, "Usage: /asksubagent ROLE PROMPT [--file FILE] [--task ID] [--no-task] [--preview]"
+
+    if role.lower() == "worker":
+        try:
+            result = run_worker_subagent(runtime, state, spec, strict=True)
+        except Exception as exc:
+            return False, str(exc)
+        print(result)
+        return True, result
+
+    role, prompt, task_id, include_task_context, target_file, scope_path, preview, err = parse_asksubagent_spec(spec)
+    if err:
+        return False, err
+    try:
+        task_context = build_subagent_context(
+            state,
+            role,
+            task_id=task_id,
+            include_task_context=include_task_context,
+        )
+        result = run_subagent(runtime.client, state, role, prompt, context={
+            "active_project": state.active_project,
+            "provider_mode": state.provider_mode,
+            "routes": list(state.routes),
+        }, task_context=task_context)
+    except Exception as exc:
+        return False, str(exc)
+    ui.panel(subagent_result_text(result), title=f"Subagent: {role}", style="cyan")
+    return True, ""
 
 
 def parse_edit_spec(spec):
@@ -660,8 +731,8 @@ def parse_worker_patch_payload(content):
         raise ValueError(f"Unsupported worker patch payload_version: {payload_version}. Expected 1.")
     target = str(data.get("target_file", data.get("scope", "")) or "").strip()
     patches = data.get("patches")
-    if not isinstance(patches, list) or not patches:
-        raise ValueError("Worker patch payload must include a non-empty patches array")
+    if not isinstance(patches, list):
+        raise ValueError("Worker patch payload must include a patches array")
     normalized_patches = []
     for patch in patches:
         if not isinstance(patch, dict):
@@ -697,6 +768,7 @@ def validate_worker_patch_payload(file_text_map, payload, target_norm, scope_res
     resolved_patches = []
     default_target = str(payload.get("target_file", "") or "").strip()
     scope_allows_default_target = bool(default_target) and not scope_resolved.is_dir()
+    explicit_file_mode = not scope_resolved.is_dir()
     for patch in payload.get("patches", []):
         patch_target = str(patch.get("target_file") or (default_target if scope_allows_default_target else "") or "").strip()
         if not patch_target:
@@ -711,6 +783,11 @@ def validate_worker_patch_payload(file_text_map, payload, target_norm, scope_res
         except Exception as exc:
             raise ValueError(f"Worker patch target '{patch_target_norm}' is outside the allowed scope") from exc
         if not patch_resolved.exists():
+            # In explicit --file mode, target is already hard-scoped to one file.
+            # If it does not exist yet, treat patch as file creation even if
+            # model-provided line ranges are not 0-0.
+            if explicit_file_mode:
+                create_file = True
             create_file = create_file or (start_line == 0 and end_line == 0)
             if not create_file:
                 raise ValueError(f"File does not exist: {patch_target_norm}")
@@ -732,15 +809,27 @@ def apply_worker_patch_payload(file_text_map, resolved_patches, scope_resolved):
         if original_text is None:
             create_patches = [patch for patch in patches if bool(patch.get("create_file", False))]
             if create_patches:
-                if len(patches) != 1:
-                    raise ValueError(f"New files must be created with a single patch: {file_target}")
-                updated_text = create_patches[0]["new_text"]
+                # Be tolerant when models emit multiple create-style patches for the same
+                # missing file: keep the last create patch as canonical content.
+                updated_text = create_patches[-1]["new_text"]
                 updated_text_map[file_target] = updated_text
                 continue
             original_text = read_text_file(file_target)
             if original_text.startswith(("File does not", "Access denied", "File too large")):
                 raise ValueError(original_text)
             file_text_map[file_target] = original_text
+        replace_all_patch = None
+        if len(patches) == 1:
+            candidate = patches[0]
+            if not bool(candidate.get("create_file", False)):
+                if int(candidate.get("start_line", 0)) == 0 and int(candidate.get("end_line", 0)) == 0:
+                    replace_all_patch = candidate
+        if replace_all_patch is not None:
+            updated_text = str(replace_all_patch.get("new_text", ""))
+            if original_text.endswith("\n") and not updated_text.endswith("\n"):
+                updated_text += "\n"
+            updated_text_map[file_target] = updated_text
+            continue
         lines = original_text.splitlines()
         for patch in sorted(patches, key=lambda item: int(item["start_line"]), reverse=True):
             if bool(patch.get("create_file", False)):
@@ -876,17 +965,22 @@ def apply_worker_changes_transactional(original_snapshots, proposed_text_map):
         raise RuntimeError(str(exc)) from exc
 
 
-def run_worker_subagent(runtime, state, spec):
+def run_worker_subagent(runtime, state, spec, strict=False):
+    def _fail(message):
+        if strict:
+            raise RuntimeError(str(message))
+        return str(message)
+
     role, prompt, task_id, include_task_context, target_file, scope_path, preview, err = parse_asksubagent_spec(spec)
     if err:
-        return err
+        return _fail(err)
 
     from .tools.files import normalize_agent_path, file_tree
 
     try:
         target_norm, scope_resolved = _normalize_worker_scope(target_file, scope_path)
     except ValueError as exc:
-        return str(exc)
+        return _fail(str(exc))
 
     file_text_map = {}
     prompt_scope_text = ""
@@ -895,9 +989,12 @@ def run_worker_subagent(runtime, state, spec):
         prompt_scope_text = file_tree(scope_norm, max_depth=4)
     else:
         original_text = read_text_file(target_norm)
-        if original_text.startswith(("File does not", "Access denied", "File too large")):
-            return original_text
-        file_text_map[target_norm] = original_text
+        if original_text.startswith("File does not"):
+            pass
+        elif original_text.startswith(("Access denied", "File too large")):
+            return _fail(original_text)
+        else:
+            file_text_map[target_norm] = original_text
 
     task_context = build_subagent_context(
         state,
@@ -923,7 +1020,7 @@ def run_worker_subagent(runtime, state, spec):
             task_context=task_context,
         )
     except Exception as exc:
-        return f"Worker subagent failed: {exc}"
+        return _fail(f"Worker subagent failed: {exc}")
     current_task_id = latest_task_id()
     log_subagent_event(
         current_task_id,
@@ -942,17 +1039,17 @@ def run_worker_subagent(runtime, state, spec):
     try:
         payload = parse_worker_patch_payload(result.get("content", ""))
     except ValueError as exc:
-        return str(exc)
+        return _fail(str(exc))
 
     try:
         resolved_patches = validate_worker_patch_payload(file_text_map, payload, target_norm, scope_resolved)
     except ValueError as exc:
-        return str(exc)
+        return _fail(str(exc))
 
     try:
         proposed_text_map = apply_worker_patch_payload(file_text_map, resolved_patches, scope_resolved)
     except ValueError as exc:
-        return str(exc)
+        return _fail(str(exc))
 
     created_files = {
         target
@@ -970,7 +1067,7 @@ def run_worker_subagent(runtime, state, spec):
             else:
                 before_text = read_text_file(file_target)
                 if before_text.startswith(("File does not", "Access denied", "File too large")):
-                    return before_text
+                    return _fail(before_text)
                 file_text_map[file_target] = before_text
                 original_snapshots[file_target] = {"exists": True, "text": before_text}
         else:
@@ -1013,7 +1110,7 @@ def run_worker_subagent(runtime, state, spec):
         apply_worker_changes_transactional(original_snapshots, proposed_text_map)
     except Exception as exc:
         log_subagent_event(current_task_id, role, "apply_failed", {"error": str(exc)})
-        return f"Transactional apply failed. Changes rolled back.\n{exc}"
+        return _fail(f"Transactional apply failed. Changes rolled back.\n{exc}")
     log_subagent_event(
         current_task_id,
         role,
@@ -1930,7 +2027,11 @@ def handle_prefixed_command(user_input, state, runtime):
         return True
     if user_input == "/runplan" or user_input.startswith("/runplan "):
         spec = user_input.split(" ", 1)[1].strip() if " " in user_input else ""
-        print(run_plan_file(runtime, state, spec))
+        plan_path, from_step, err = parse_runplan_spec(spec)
+        if err:
+            print(f"Usage: /runplan [FILE] [--from N]\n{err}")
+        else:
+            print(run_plan_file(runtime, state, plan_path, from_step=from_step))
         return True
     if user_input.startswith("/explain "):
         target = user_input.split(" ", 1)[1].strip()
