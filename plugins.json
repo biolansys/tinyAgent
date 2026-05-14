@@ -4,7 +4,10 @@
       "name": "sample",
       "module": "plugins.sample_plugin",
       "priority": 50,
-      "capabilities": ["project_hooks", "task_hooks"],
+      "capabilities": [
+        "project_hooks",
+        "task_hooks"
+      ],
       "commands": [
         {
           "name": "/pluginping",
@@ -25,13 +28,17 @@
           "name": "after_task",
           "handler": "after_task"
         }
-      ]
+      ],
+      "enabled": false
     },
     {
       "name": "example-policy",
       "module": "plugins.example_policy_plugin",
       "priority": 20,
-      "capabilities": ["project_hooks", "task_hooks"],
+      "capabilities": [
+        "project_hooks",
+        "task_hooks"
+      ],
       "commands": [
         {
           "name": "/policystatus",
@@ -52,7 +59,8 @@
           "name": "after_task",
           "handler": "after_task"
         }
-      ]
+      ],
+      "enabled": false
     }
   ]
 }

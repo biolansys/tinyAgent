@@ -96,6 +96,8 @@ COMMANDS = {
     "/guidance": "Show AGENTS.md + SKILL guidance",
     "/reloadguidance": "Reload AGENTS.md + SKILL guidance",
     "/plugins": "Show loaded plugins and plugin loader errors",
+    "/pluginenable NAME": "Enable one plugin in plugins.json and reload plugin registry",
+    "/plugindisable NAME": "Disable one plugin in plugins.json and reload plugin registry",
     "/index": "Build or refresh active project code index",
     "/indexstats": "Show code index statistics",
     "/searchcode QUERY": "Search code index",
@@ -194,7 +196,7 @@ HELP_SECTIONS = [
         "/guidance", "/reloadguidance",
     ]),
     ("Plugins", [
-        "/plugins",
+        "/plugins", "/pluginenable NAME", "/plugindisable NAME",
     ]),
 ]
 
@@ -1374,6 +1376,52 @@ def doctor_report(state):
     return "\n".join(lines)
 
 
+def reload_plugins_from_manifest():
+    for name in list(PLUGIN_MANAGER.commands.keys()):
+        COMMANDS.pop(name, None)
+    PLUGIN_MANAGER.load_manifest(config.PLUGIN_MANIFEST_FILE)
+    COMMANDS.update(PLUGIN_MANAGER.get_help_entries())
+    return f"Plugins reloaded. commands={len(PLUGIN_MANAGER.commands)} hooks={sum(len(v) for v in PLUGIN_MANAGER.hooks.values())}"
+
+
+def set_plugin_enabled(spec, enabled):
+    target_name = str(spec or "").strip()
+    if not target_name:
+        cmd = "/pluginenable NAME" if enabled else "/plugindisable NAME"
+        return f"Usage: {cmd}"
+    manifest_path = config.PLUGIN_MANIFEST_FILE
+    if not manifest_path.exists():
+        return f"Plugin manifest not found: {manifest_path}"
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return f"Plugin manifest read error: {exc}"
+    if not isinstance(data, dict):
+        return "Plugin manifest must be a JSON object."
+    plugins = data.get("plugins")
+    if not isinstance(plugins, list):
+        return "Plugin manifest field 'plugins' must be a list."
+
+    matched = False
+    for item in plugins:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("name", "")).strip() == target_name:
+            item["enabled"] = bool(enabled)
+            matched = True
+            break
+    if not matched:
+        return f"Plugin not found: {target_name}"
+    try:
+        manifest_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    except Exception as exc:
+        return f"Plugin manifest write error: {exc}"
+
+    reload_info = reload_plugins_from_manifest()
+    state = "enabled" if enabled else "disabled"
+    return f"Plugin {state}: {target_name}\n{reload_info}"
+
+
 def smoketest_report(state):
     checks = []
     checks.append(("doctor output available", bool(doctor_report(state).strip()), "doctor"))
@@ -1907,6 +1955,18 @@ def handle_prefixed_command(user_input, state, runtime):
     if user_input.startswith("/cmddel "):
         print(remove_configured_cmd(user_input.split(" ", 1)[1]))
         return True
+    if user_input.startswith("/pluginenable "):
+        print(set_plugin_enabled(user_input.split(" ", 1)[1], True))
+        return True
+    if user_input == "/pluginenable":
+        print(set_plugin_enabled("", True))
+        return True
+    if user_input.startswith("/plugindisable "):
+        print(set_plugin_enabled(user_input.split(" ", 1)[1], False))
+        return True
+    if user_input == "/plugindisable":
+        print(set_plugin_enabled("", False))
+        return True
     if user_input.startswith("/projectnew "):
         try:
             name, template, err = parse_projectnew_spec(user_input.split(" ", 1)[1].strip())
@@ -2169,8 +2229,13 @@ def main():
         headless=runtime_flags["headless"],
         preapproved_commands=runtime_flags["approve_cmd"],
     )
-    PLUGIN_MANAGER.load_manifest(config.PLUGIN_MANIFEST_FILE)
-    COMMANDS.update(PLUGIN_MANAGER.get_help_entries())
+    if bool(getattr(config, "PLUGINS_AUTOLOAD_ON_STARTUP", False)):
+        PLUGIN_MANAGER.load_manifest(config.PLUGIN_MANIFEST_FILE)
+        COMMANDS.update(PLUGIN_MANAGER.get_help_entries())
+    else:
+        PLUGIN_MANAGER.commands = {}
+        PLUGIN_MANAGER.hooks = {}
+        PLUGIN_MANAGER.errors = []
     state = AgentState()
     state.active_project = get_active_project()
     state.load_project_session()

@@ -12,6 +12,7 @@ SNAPSHOT_DIR = (ROOT / "snapshots").resolve()
 SKILL_DIR = (ROOT / "SKILL").resolve()
 PLUGIN_DIR = (ROOT / "plugins").resolve()
 PLUGIN_MANIFEST_FILE = ROOT / "plugins.json"
+PLUGINS_AUTOLOAD_ON_STARTUP = False
 MEMORY_FILE = WORKSPACE / ".agent_memory.json"
 CMD_COMMANDS_FILE = ROOT / ".cmd_commands.json"
 

@@ -55,6 +55,9 @@ class PluginManager:
             self.errors.append("Invalid plugin item (expected object).")
             return
         plugin_name = str(item.get("name", "")).strip() or "unnamed"
+        enabled = bool(item.get("enabled", True))
+        if not enabled:
+            return
         module_name = str(item.get("module", "")).strip()
         command_items = item.get("commands", [])
         hook_items = item.get("hooks", [])

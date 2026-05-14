@@ -143,11 +143,83 @@ class CliTests(unittest.TestCase):
         self.assertTrue(handled)
         mock_print.assert_called_once_with("removed")
 
+    def test_handle_prefixed_pluginenable_prints_result(self):
+        state = make_state()
+        runtime = make_runtime()
+        with patch("openrouter_agent.cli.set_plugin_enabled", return_value="Plugin enabled: sample"), patch(
+            "builtins.print"
+        ) as mock_print:
+            handled = cli.handle_prefixed_command("/pluginenable sample", state, runtime)
+        self.assertTrue(handled)
+        mock_print.assert_called_once_with("Plugin enabled: sample")
+
+    def test_handle_prefixed_plugindisable_prints_result(self):
+        state = make_state()
+        runtime = make_runtime()
+        with patch("openrouter_agent.cli.set_plugin_enabled", return_value="Plugin disabled: sample"), patch(
+            "builtins.print"
+        ) as mock_print:
+            handled = cli.handle_prefixed_command("/plugindisable sample", state, runtime)
+        self.assertTrue(handled)
+        mock_print.assert_called_once_with("Plugin disabled: sample")
+
     def test_help_topic_text_resolves_models_command(self):
         cli._COMMAND_REFERENCE_CACHE = None
         text = cli.help_topic_text("models")
         self.assertIn("/models", text)
         self.assertIn("Lists currently selected provider routes", text)
+
+    def test_set_plugin_enabled_updates_manifest_and_reloads(self):
+        root = make_tmp_root("plugin-enable")
+        manifest = root / "plugins.json"
+        manifest.write_text(
+            json.dumps(
+                {
+                    "plugins": [
+                        {"name": "sample", "module": "plugins.sample_plugin", "enabled": False},
+                        {"name": "other", "module": "plugins.example_policy_plugin", "enabled": True},
+                    ]
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        try:
+            with patch("openrouter_agent.cli.config.PLUGIN_MANIFEST_FILE", manifest), patch(
+                "openrouter_agent.cli.reload_plugins_from_manifest",
+                return_value="Plugins reloaded. commands=1 hooks=1",
+            ):
+                out = cli.set_plugin_enabled("sample", True)
+            saved = json.loads(manifest.read_text(encoding="utf-8"))
+        finally:
+            if root.exists():
+                for child in sorted(root.rglob("*"), reverse=True):
+                    if child.is_file():
+                        child.unlink()
+                for child in sorted([p for p in root.rglob("*") if p.is_dir()], reverse=True):
+                    child.rmdir()
+                root.rmdir()
+
+        self.assertIn("Plugin enabled: sample", out)
+        self.assertTrue(saved["plugins"][0]["enabled"])
+
+    def test_set_plugin_enabled_reports_missing_plugin(self):
+        root = make_tmp_root("plugin-missing")
+        manifest = root / "plugins.json"
+        manifest.write_text(json.dumps({"plugins": [{"name": "x", "module": "plugins.sample_plugin"}]}), encoding="utf-8")
+        try:
+            with patch("openrouter_agent.cli.config.PLUGIN_MANIFEST_FILE", manifest):
+                out = cli.set_plugin_enabled("sample", False)
+        finally:
+            if root.exists():
+                for child in sorted(root.rglob("*"), reverse=True):
+                    if child.is_file():
+                        child.unlink()
+                for child in sorted([p for p in root.rglob("*") if p.is_dir()], reverse=True):
+                    child.rmdir()
+                root.rmdir()
+        self.assertIn("Plugin not found: sample", out)
 
     def test_help_topic_text_falls_back_when_reference_missing(self):
         with patch("openrouter_agent.cli._load_command_reference", return_value={}):
