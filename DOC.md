@@ -89,6 +89,20 @@ Rule of thumb:
 - Use `auto off` when you want tighter control.
 - Use `smartauto on` when you want the app to continue only when it appears safe and useful.
 
+## CLI Flags
+
+The app supports runtime CLI flags when starting `python main.py`:
+
+- `--headless`
+  Blocks interactive confirmations unless commands are explicitly pre-approved.
+
+- `--non-interactive`
+  Automation mode that implies headless confirmation behavior.
+
+- `--approve-cmd "COMMAND"`
+  Pre-approves one exact shell command in headless/non-interactive mode.
+  You can repeat `--approve-cmd` multiple times.
+
 ## Subagents
 
 Subagents are specialized helper roles that the app can invoke on demand to handle narrow tasks with controlled scope.
@@ -144,8 +158,11 @@ Worker payload contract (current):
 
 - `/runplan` (without argument) defaults to `RUNPLAN.md`.
 - `/runplan FILE` uses the provided file.
+- `/runplan FILE --from N` starts execution from step `N`.
+- `/runplan FILE --resume` resumes from last saved failed/running step.
 - In both cases it asks for confirmation before execution.
 - Plan file lines are restricted to `/asksubagent ...` commands only.
+- Runplan execution state is persisted under project logs (`running`, `failed`, `completed`, next step index, and error text).
 
 Best practice:
 
@@ -175,6 +192,21 @@ Rule of thumb:
 - Use the main agent loop for normal work.
 - Use `review` when you want analysis only.
 - Use `worker` when you already know the ownership boundary and want a controlled edit.
+
+## Last Error Capture
+
+The runtime now captures the latest full exception traceback for task failures.
+
+- `/lasterror`
+  Prints the latest captured multi-line runtime exception text.
+
+- `/retrylast`
+  Runs a fix task automatically using the captured latest error text.
+
+Behavior notes:
+
+- On successful task execution, the captured last error is cleared.
+- Captured last error is stored in project session state.
 
 ## Tkinter System Specs App
 
@@ -416,6 +448,22 @@ A hook context should include at least:
 ## How To Create And Add A Plugin
 
 This app loads plugins from `plugins.json` and Python modules under `plugins/`.
+
+Current startup policy:
+
+- Plugins are defined in `plugins.json`.
+- In current configuration, plugins are not auto-loaded on startup by default.
+- Use plugin lifecycle commands to load/toggle explicitly.
+
+Plugin lifecycle commands:
+
+- `/plugins`
+- `/pluginlist`
+- `/plugininfo NAME`
+- `/pluginvalidate`
+- `/pluginreload`
+- `/pluginenable NAME`
+- `/plugindisable NAME`
 
 ### 1) Decide Plugin Scope
 

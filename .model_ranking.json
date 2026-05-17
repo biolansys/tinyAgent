@@ -264,12 +264,12 @@
     "last_used": "2026-05-01T09:32:27"
   },
   "huggingface::Qwen/Qwen3-Coder-480B-A35B-Instruct": {
-    "attempts": 13,
-    "successes": 11,
+    "attempts": 34,
+    "successes": 32,
     "failures": 2,
-    "total_latency": 12.412472486495972,
+    "total_latency": 79.70107650756836,
     "last_error": "",
-    "last_used": "2026-05-11T00:04:05"
+    "last_used": "2026-05-14T23:01:01"
   },
   "huggingface::meta-llama/Llama-3.1-8B-Instruct": {
     "attempts": 3,
@@ -288,12 +288,12 @@
     "last_used": "2026-05-01T09:32:00"
   },
   "huggingface::Qwen/Qwen2.5-Coder-32B-Instruct": {
-    "attempts": 10,
-    "successes": 8,
+    "attempts": 11,
+    "successes": 9,
     "failures": 2,
-    "total_latency": 4.705926418304443,
+    "total_latency": 5.254426717758179,
     "last_error": "",
-    "last_used": "2026-05-11T00:04:06"
+    "last_used": "2026-05-14T18:32:17"
   },
   "mistral::codestral-2508": {
     "attempts": 1,
@@ -312,28 +312,28 @@
     "last_used": "2026-05-01T09:31:40"
   },
   "mistral::devstral-medium-2507": {
-    "attempts": 14,
-    "successes": 13,
-    "failures": 1,
-    "total_latency": 12.442275762557983,
-    "last_error": "",
-    "last_used": "2026-05-11T00:04:04"
+    "attempts": 165,
+    "successes": 160,
+    "failures": 5,
+    "total_latency": 285.0248951911926,
+    "last_error": "mistral::devstral-medium-2507: HTTP Error 429: Too Many Requests",
+    "last_used": "2026-05-14T22:59:17"
   },
   "mistral::devstral-medium-latest": {
-    "attempts": 1970,
-    "successes": 1967,
-    "failures": 3,
-    "total_latency": 8145.406967878342,
-    "last_error": "",
-    "last_used": "2026-05-11T00:04:05"
+    "attempts": 2370,
+    "successes": 2365,
+    "failures": 5,
+    "total_latency": 10074.937489032745,
+    "last_error": "mistral::devstral-medium-latest: HTTP Error 429: Too Many Requests",
+    "last_used": "2026-05-14T22:55:04"
   },
   "mistral::devstral-small-2507": {
-    "attempts": 122,
-    "successes": 119,
-    "failures": 3,
-    "total_latency": 136.51587510108948,
-    "last_error": "",
-    "last_used": "2026-05-11T00:04:04"
+    "attempts": 128,
+    "successes": 122,
+    "failures": 6,
+    "total_latency": 139.44478273391724,
+    "last_error": "mistral::devstral-small-2507: HTTP Error 429: Too Many Requests",
+    "last_used": "2026-05-14T22:59:54"
   },
   "mistral::magistral-medium-2509": {
     "attempts": 1,
@@ -360,12 +360,12 @@
     "last_used": "2026-05-01T09:31:42"
   },
   "mistral::magistral-small-latest": {
-    "attempts": 1360,
-    "successes": 1358,
-    "failures": 2,
-    "total_latency": 2185.4233889579773,
-    "last_error": "",
-    "last_used": "2026-05-11T00:04:04"
+    "attempts": 1447,
+    "successes": 1441,
+    "failures": 6,
+    "total_latency": 2307.6153576374054,
+    "last_error": "mistral::magistral-small-latest: HTTP Error 503: Service Unavailable",
+    "last_used": "2026-05-14T22:59:52"
   },
   "mistral::mistral-large-2411": {
     "attempts": 4,

@@ -183,6 +183,24 @@ It is intended to be consumed later by `/help` for rich per-command help output.
 - `/plugins`  
   Prints loaded plugin commands/hooks and loader errors.
 
+- `/pluginlist`  
+  Lists plugins from `plugins.json` with `enabled` and currently `active` runtime status.
+
+- `/plugininfo NAME`  
+  Shows one plugin manifest entry details: module, enabled, priority, capabilities, commands, hooks.
+
+- `/pluginreload`  
+  Reloads plugin registry from `plugins.json` and refreshes plugin command entries.
+
+- `/pluginvalidate`  
+  Validates plugin manifest shape and performs loadability check, reporting loader warnings/errors.
+
+- `/pluginenable NAME`  
+  Sets `enabled: true` for one plugin in `plugins.json` and reloads the registry.
+
+- `/plugindisable NAME`  
+  Sets `enabled: false` for one plugin in `plugins.json` and reloads the registry.
+
 ## File And Index Utilities
 
 - `/snapshot NAME`  
@@ -231,9 +249,10 @@ It is intended to be consumed later by `/help` for rich per-command help output.
 - `/asksubagent ROLE PROMPT [--file FILE] [--task ID] [--no-task] [--preview]`  
   Runs specialist subagent; `worker` requires explicit ownership via `--file` or `--scope`.
 
-- `/runplan [FILE]`  
+- `/runplan [FILE] [--from N] [--resume]`  
   Executes markdown plan file containing `/asksubagent ...` lines only.  
   Default file is `RUNPLAN.md`. Always prompts for confirmation first.
+  `--from N` starts from explicit step index, and `--resume` continues from the last failed/running saved step for that plan.
 
 - `/explain FILE`  
   Asks runtime to explain a file’s purpose/structure/dependencies/risks.
@@ -343,6 +362,12 @@ It is intended to be consumed later by `/help` for rich per-command help output.
 
 - `/memorynote TEXT`  
   Appends one note to project memory.
+
+- `/lasterror`  
+  Prints the latest captured runtime exception text (multi-line traceback).
+
+- `/retrylast`  
+  Re-runs a fix task using the full latest captured error text as input.
 
 ## Notes For Future `/help` Integration
 

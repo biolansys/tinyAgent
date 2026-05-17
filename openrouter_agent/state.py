@@ -25,6 +25,7 @@ class AgentState:
         "by_route": {},
     })
     command_history: list[str] = field(default_factory=list)
+    last_error: str = ""
 
     def route_allowed(self, route: str) -> bool:
         if self.provider_mode == "auto":
@@ -44,6 +45,7 @@ class AgentState:
             "verbose": self.verbose,
             "dry_run": self.dry_run,
             "command_history": list(self.command_history[-config.MAX_SAVED_COMMAND_HISTORY:]),
+            "last_error": str(self.last_error or ""),
         }
 
     def record_command(self, command: str):
@@ -78,6 +80,7 @@ class AgentState:
                 for x in data["command_history"]
                 if str(x).strip()
             ][-config.MAX_SAVED_COMMAND_HISTORY:]
+        self.last_error = str(data.get("last_error", "") or "")
         return True
 
     def save_project_session(self):

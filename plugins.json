@@ -29,7 +29,7 @@
           "handler": "after_task"
         }
       ],
-      "enabled": false
+      "enabled": true
     },
     {
       "name": "example-policy",
@@ -60,7 +60,7 @@
           "handler": "after_task"
         }
       ],
-      "enabled": false
+      "enabled": true
     }
   ]
 }

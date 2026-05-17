@@ -27,6 +27,7 @@ def make_state():
         load_project_session=MagicMock(),
         save_project_session=MagicMock(),
         record_command=MagicMock(),
+        last_error="",
     )
 
 
@@ -162,6 +163,27 @@ class CliTests(unittest.TestCase):
             handled = cli.handle_prefixed_command("/plugindisable sample", state, runtime)
         self.assertTrue(handled)
         mock_print.assert_called_once_with("Plugin disabled: sample")
+
+    def test_handle_exact_plugin_commands(self):
+        state = make_state()
+        runtime = make_runtime()
+        with patch("openrouter_agent.cli.plugin_list_text", return_value="Plugins"), patch(
+            "openrouter_agent.cli.reload_plugins_from_manifest", return_value="reloaded"
+        ), patch(
+            "openrouter_agent.cli.plugin_validate_text", return_value="valid"
+        ), patch("builtins.print") as mock_print:
+            self.assertTrue(cli.handle_exact_command("/pluginlist", state, runtime))
+            self.assertTrue(cli.handle_exact_command("/pluginreload", state, runtime))
+            self.assertTrue(cli.handle_exact_command("/pluginvalidate", state, runtime))
+        self.assertEqual(3, mock_print.call_count)
+
+    def test_handle_prefixed_plugininfo_prints_result(self):
+        state = make_state()
+        runtime = make_runtime()
+        with patch("openrouter_agent.cli.plugin_info_text", return_value="info"), patch("builtins.print") as mock_print:
+            handled = cli.handle_prefixed_command("/plugininfo sample", state, runtime)
+        self.assertTrue(handled)
+        mock_print.assert_called_once_with("info")
 
     def test_help_topic_text_resolves_models_command(self):
         cli._COMMAND_REFERENCE_CACHE = None
@@ -565,7 +587,7 @@ class CliTests(unittest.TestCase):
         ) as mock_print:
             handled = cli.handle_prefixed_command("/runplan RUNPLAN.md --from 3", state, runtime)
         self.assertTrue(handled)
-        mock_run.assert_called_once_with(runtime, state, "RUNPLAN.md", from_step=3)
+        mock_run.assert_called_once_with(runtime, state, "RUNPLAN.md", from_step=3, resume=False)
         mock_print.assert_called_once_with("Plan completed.")
 
     def test_runplan_without_path_uses_default_runplan_md(self):
@@ -603,6 +625,23 @@ class CliTests(unittest.TestCase):
             result = cli.run_plan_file(runtime, state, "RUNPLAN.md", from_step=2)
         self.assertIn("Invalid /runplan --from value", result)
 
+    def test_runplan_resume_uses_saved_next_step(self):
+        state = make_state()
+        runtime = make_runtime()
+        with patch("builtins.input", return_value="y"), patch(
+            "openrouter_agent.cli.read_text_file",
+            return_value=(
+                "/asksubagent review \"step1\"\n"
+                "/asksubagent review \"step2\"\n"
+                "/asksubagent review \"step3\"\n"
+            ),
+        ), patch("openrouter_agent.cli._load_runplan_state", return_value={"status": "failed", "next_step_index": 3}), patch(
+            "openrouter_agent.cli.run_plan_subagent_step", return_value=(True, "")
+        ) as mock_step, patch("openrouter_agent.cli._save_runplan_state"):
+            result = cli.run_plan_file(runtime, state, "RUNPLAN.md", from_step=1, resume=True)
+        self.assertIn("Plan completed. Executed 1 subagent command", result)
+        self.assertEqual(1, mock_step.call_count)
+
     def test_run_plan_file_stops_when_step_fails(self):
         state = make_state()
         runtime = make_runtime()
@@ -615,21 +654,36 @@ class CliTests(unittest.TestCase):
         self.assertIn("synthetic error", result)
 
     def test_parse_runplan_spec(self):
-        path, from_step, err = cli.parse_runplan_spec("RUNPLAN.md --from 4")
+        path, from_step, resume, err = cli.parse_runplan_spec("RUNPLAN.md --from 4")
         self.assertIsNone(err)
         self.assertEqual("RUNPLAN.md", path)
         self.assertEqual(4, from_step)
+        self.assertFalse(resume)
 
     def test_parse_runplan_spec_requires_valid_from(self):
-        path, from_step, err = cli.parse_runplan_spec("--from x")
+        path, from_step, resume, err = cli.parse_runplan_spec("--from x")
         self.assertIsNone(path)
         self.assertIsNone(from_step)
+        self.assertIsNone(resume)
         self.assertIn("Invalid --from value", err)
+
+    def test_parse_runplan_spec_supports_resume_flag(self):
+        path, from_step, resume, err = cli.parse_runplan_spec("RUNPLAN.md --resume")
+        self.assertIsNone(err)
+        self.assertEqual("RUNPLAN.md", path)
+        self.assertEqual(1, from_step)
+        self.assertTrue(resume)
 
     def test_parse_runtime_flags_headless_and_preapprove(self):
         parsed = cli.parse_runtime_flags(["--headless", "--approve-cmd", "python -m pip install demo-package"])
         self.assertTrue(parsed["headless"])
+        self.assertFalse(parsed["non_interactive"])
         self.assertEqual(["python -m pip install demo-package"], parsed["approve_cmd"])
+
+    def test_parse_runtime_flags_non_interactive_implies_headless(self):
+        parsed = cli.parse_runtime_flags(["--non-interactive"])
+        self.assertTrue(parsed["headless"])
+        self.assertTrue(parsed["non_interactive"])
 
     def test_parse_projectnew_spec_with_template(self):
         name, template, err = cli.parse_projectnew_spec("alpha --template tkinter")
@@ -1284,6 +1338,54 @@ class CliTests(unittest.TestCase):
             handled = cli.handle_exact_command("/cmdhistory", state, runtime)
         self.assertTrue(handled)
         mock_print.assert_called_once_with("history text")
+
+    def test_handle_exact_command_lasterror_without_value(self):
+        state = make_state()
+        runtime = make_runtime()
+        state.last_error = ""
+        with patch("builtins.print") as mock_print:
+            handled = cli.handle_exact_command("/lasterror", state, runtime)
+        self.assertTrue(handled)
+        mock_print.assert_called_once_with("No captured error.")
+
+    def test_handle_exact_command_lasterror_with_value(self):
+        state = make_state()
+        runtime = make_runtime()
+        state.last_error = "line1\nline2\n"
+        with patch("builtins.print") as mock_print:
+            handled = cli.handle_exact_command("/lasterror", state, runtime)
+        self.assertTrue(handled)
+        mock_print.assert_called_once_with("line1\nline2")
+
+    def test_handle_exact_command_retrylast_without_value(self):
+        state = make_state()
+        runtime = make_runtime()
+        state.last_error = ""
+        with patch("builtins.print") as mock_print:
+            handled = cli.handle_exact_command("/retrylast", state, runtime)
+        self.assertTrue(handled)
+        mock_print.assert_called_once_with("No captured error to retry.")
+
+    def test_handle_exact_command_retrylast_with_value(self):
+        state = make_state()
+        runtime = make_runtime()
+        state.last_error = "Traceback line"
+        with patch("openrouter_agent.cli.run_task_with_error_capture", return_value=(True, "fixed")), patch(
+            "openrouter_agent.cli.ui.panel"
+        ) as mock_panel:
+            handled = cli.handle_exact_command("/retrylast", state, runtime)
+        self.assertTrue(handled)
+        mock_panel.assert_called_once()
+
+    def test_run_task_with_error_capture_stores_error(self):
+        state = make_state()
+        runtime = make_runtime()
+        runtime.run_task = MagicMock(side_effect=RuntimeError("boom"))
+        ok, result = cli.run_task_with_error_capture(runtime, state, "x")
+        self.assertFalse(ok)
+        self.assertIn("RuntimeError: boom", result)
+        self.assertIn("RuntimeError: boom", state.last_error)
+        state.save_project_session.assert_called()
 
     def test_load_prompt_history_replaces_readline_history(self):
         state = make_state()

@@ -95,6 +95,18 @@ MISTRAL_MODELS=mistral-small-latest,codestral-latest
 python main.py
 ```
 
+### CLI flags
+
+```bash
+python main.py --headless
+python main.py --non-interactive
+python main.py --headless --approve-cmd "python -m unittest discover -s tests -v"
+```
+
+- `--headless`: blocks interactive confirmations unless command is pre-approved.
+- `--non-interactive`: automation mode; implies headless confirmation behavior.
+- `--approve-cmd "COMMAND"`: pre-approves one exact shell command in headless/non-interactive mode (repeatable).
+
 ### First commands after startup
 
 ```text
@@ -245,7 +257,7 @@ Notes:
 ```text
 /subagents
 /asksubagent ROLE PROMPT [--file FILE] [--task ID] [--no-task] [--preview]
-/runplan [FILE]
+/runplan [FILE] [--from N] [--resume]
 /explain FILE
 /reviewfile FILE
 /refactor FILE
@@ -255,7 +267,7 @@ Notes:
 
 `/asksubagent` includes the latest task context from the active project by default, and you can override it with `--task ID` or disable it with `--no-task`. The `worker` role accepts `--file FILE` for single-file work or `--scope PATH` for a bounded directory scope, and it returns a JSON patch payload that only applies inside that scope.
 
-`/runplan` executes `/asksubagent` commands from a Markdown file. If no filename is provided, it defaults to `RUNPLAN.md`. The app asks for confirmation before execution.
+`/runplan` executes `/asksubagent` commands from a Markdown file. If no filename is provided, it defaults to `RUNPLAN.md`. The app asks for confirmation before execution. Use `--from N` to start at a specific step and `--resume` to continue from the last saved failed/running runplan state.
 
 ### Git
 
@@ -298,6 +310,8 @@ Git behavior:
 /memory
 /memoryclear
 /memorynote TEXT
+/lasterror
+/retrylast
 /cmdhistory
 /history
 /historyclear
@@ -305,6 +319,9 @@ Git behavior:
 /audit
 /auditclear
 ```
+
+- `/lasterror` prints the latest captured multi-line runtime exception/traceback.
+- `/retrylast` runs a fix task using the full latest captured error text.
 
 The app also keeps the last 50 user-entered commands in the active project's session file so they are available again in the next session. They are reloaded into the prompt history for the active project, and `/cmdhistory` shows them explicitly.
 
@@ -322,6 +339,12 @@ The startup/dashboard view also shows project-specific visibility details such a
 /guidance
 /reloadguidance
 /plugins
+/pluginlist
+/plugininfo NAME
+/pluginreload
+/pluginvalidate
+/pluginenable NAME
+/plugindisable NAME
 ```
 
 Guidance is loaded from:
@@ -332,7 +355,7 @@ Guidance is loaded from:
 
 ## Plugins
 
-Plugins are loaded at startup from `plugins.json`.
+Plugins are defined in `plugins.json`. In the current configuration, plugins are disabled at startup by default and should be loaded/toggled explicitly.
 
 Current plugin support includes:
 
@@ -343,9 +366,14 @@ Current plugin support includes:
   - `project_hooks` for `on_project_created`
   - `task_hooks` for `before_task` and `after_task`
 
-Use `/plugins` to inspect loaded plugin commands, hook registrations, and loader errors.
+Use:
 
-After changing plugin code or `plugins.json`, use `/restart`.
+- `/plugins` to inspect loaded plugin commands/hooks and loader errors.
+- `/pluginlist` to inspect manifest entries with enabled/active status.
+- `/plugininfo NAME` for one plugin detail view.
+- `/pluginvalidate` to validate manifest/loadability.
+- `/pluginreload` to reload plugin registry now.
+- `/pluginenable NAME` and `/plugindisable NAME` to toggle plugin state in `plugins.json`.
 
 ## Discovery And Ranking
 

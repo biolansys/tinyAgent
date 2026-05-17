@@ -7,6 +7,7 @@ import shutil
 import argparse
 import re
 import zipfile
+import traceback
 from datetime import datetime
 try:
     import readline
@@ -46,6 +47,7 @@ from .project_context import (
     project_index_file,
     project_task_history_file,
     project_tool_audit_file,
+    project_log_dir,
 )
 
 
@@ -96,6 +98,10 @@ COMMANDS = {
     "/guidance": "Show AGENTS.md + SKILL guidance",
     "/reloadguidance": "Reload AGENTS.md + SKILL guidance",
     "/plugins": "Show loaded plugins and plugin loader errors",
+    "/pluginlist": "List plugins from plugins.json with enabled/active status",
+    "/plugininfo NAME": "Show plugin manifest details for one plugin",
+    "/pluginreload": "Reload plugin registry from plugins.json",
+    "/pluginvalidate": "Validate plugin manifest and loadability",
     "/pluginenable NAME": "Enable one plugin in plugins.json and reload plugin registry",
     "/plugindisable NAME": "Disable one plugin in plugins.json and reload plugin registry",
     "/index": "Build or refresh active project code index",
@@ -103,7 +109,7 @@ COMMANDS = {
     "/searchcode QUERY": "Search code index",
     "/edit FILE [--instruction TEXT] [--preview]": "Guided edit loop for one file with diff + confirm",
     "/asksubagent ROLE PROMPT [--file FILE] [--task ID] [--no-task] [--preview]": "Run a specialist subagent; worker requires a file",
-    "/runplan [FILE] [--from N]": "Run a Markdown plan file containing /asksubagent commands (default: RUNPLAN.md), optionally starting from step N",
+    "/runplan [FILE] [--from N] [--resume]": "Run a Markdown plan file containing /asksubagent commands (default: RUNPLAN.md), optionally starting from step N or resuming last failed step",
     "/explain FILE": "Explain a file using the agent",
     "/reviewfile FILE": "Review a file using the agent",
     "/refactor FILE": "Ask agent for safe refactor suggestions",
@@ -140,6 +146,8 @@ COMMANDS = {
     "/memory": "Show project memory",
     "/memoryclear": "Clear project memory",
     "/memorynote TEXT": "Add a note to project memory",
+    "/lasterror": "Show latest captured runtime error (multi-line)",
+    "/retrylast": "Retry using latest captured error as /fix input",
     "/usage": "Show token usage statistics",
     "/ranking": "Show self-optimizing model ranking report",
     "/resetranking": "Reset model ranking statistics",
@@ -180,7 +188,7 @@ HELP_SECTIONS = [
         "/index", "/indexstats", "/searchcode QUERY",
     ]),
     ("Agent Tasks", [
-        "/edit FILE [--instruction TEXT] [--preview]", "/asksubagent ROLE PROMPT [--file FILE] [--task ID] [--no-task] [--preview]", "/runplan [FILE] [--from N]", "/explain FILE", "/reviewfile FILE", "/refactor FILE", "/fix TEXT", "/tests",
+        "/edit FILE [--instruction TEXT] [--preview]", "/asksubagent ROLE PROMPT [--file FILE] [--task ID] [--no-task] [--preview]", "/runplan [FILE] [--from N] [--resume]", "/explain FILE", "/reviewfile FILE", "/refactor FILE", "/fix TEXT", "/tests",
     ]),
     ("Git", [
         "/gitstatus", "/gitfiles", "/gitdiff", "/gitdiffcached", "/gitadd", "/gitunstage",
@@ -190,13 +198,13 @@ HELP_SECTIONS = [
     ("Memory And History", [
         "/memory", "/memoryclear", "/memorynote TEXT", "/cmdhistory", "/history", "/historyclear",
         "/task ID", "/taskresume ID", "/taskretry ID [--tooliters N] [--provider MODE] [--review on|off] [--safe|--force]",
-        "/runs", "/run ID", "/runclear ID", "/runclearall", "/audit", "/auditclear",
+        "/runs", "/run ID", "/runclear ID", "/runclearall", "/audit", "/auditclear", "/lasterror", "/retrylast",
     ]),
     ("Guidance", [
         "/guidance", "/reloadguidance",
     ]),
     ("Plugins", [
-        "/plugins", "/pluginenable NAME", "/plugindisable NAME",
+        "/plugins", "/pluginlist", "/plugininfo NAME", "/pluginreload", "/pluginvalidate", "/pluginenable NAME", "/plugindisable NAME",
     ]),
 ]
 
@@ -345,6 +353,19 @@ def command_history_text(state):
         lines.append(f"{i:>2}. {command}")
     return "\n".join(lines)
 
+
+def run_task_with_error_capture(runtime, state, task_prompt):
+    try:
+        result = runtime.run_task(task_prompt)
+        state.last_error = ""
+        state.save_project_session()
+        return True, result
+    except Exception:
+        err_text = traceback.format_exc()
+        state.last_error = err_text
+        state.save_project_session()
+        return False, err_text
+
 def runs_text():
     rows = list_checkpoints()
     if not rows:
@@ -402,7 +423,38 @@ def plugins_text():
     return "\n".join(lines)
 
 
-def run_plan_file(runtime, state, path, from_step=1):
+def _runplan_state_file(plan_path):
+    safe_name = "".join(c for c in str(plan_path or "RUNPLAN.md") if c.isalnum() or c in "-_.")
+    safe_name = safe_name or "RUNPLAN.md"
+    base = project_log_dir() / "runplan"
+    base.mkdir(parents=True, exist_ok=True)
+    return base / f"{safe_name}.state.json"
+
+
+def _save_runplan_state(plan_path, status, next_step_index=1, error=""):
+    path = _runplan_state_file(plan_path)
+    payload = {
+        "plan_path": str(plan_path),
+        "status": str(status),
+        "next_step_index": int(next_step_index),
+        "error": str(error or ""),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    return payload
+
+
+def _load_runplan_state(plan_path):
+    path = _runplan_state_file(plan_path)
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def run_plan_file(runtime, state, path, from_step=1, resume=False):
     from .tools.files import normalize_agent_path
 
     selected_path = (path or "").strip() or "RUNPLAN.md"
@@ -427,18 +479,27 @@ def run_plan_file(runtime, state, path, from_step=1):
     if not lines:
         return f"No runnable commands found in plan file: {plan_path}"
 
+    if resume:
+        saved = _load_runplan_state(plan_path)
+        if saved and str(saved.get("status", "")).lower() in {"failed", "running"}:
+            resume_step = int(saved.get("next_step_index", 1) or 1)
+            from_step = max(from_step, resume_step)
+
     if from_step < 1:
         return "Invalid /runplan --from value. Use an integer >= 1."
     if from_step > len(lines):
         return f"Invalid /runplan --from value: {from_step}. Plan has {len(lines)} step(s)."
 
     for index, line in enumerate(lines[from_step - 1 :], start=from_step):
+        _save_runplan_state(plan_path, "running", next_step_index=index)
         ui.panel(f"{index}. {line}", title="Run Plan Step", style="cyan")
         ok, message = run_plan_subagent_step(line, state, runtime)
         if not ok:
+            _save_runplan_state(plan_path, "failed", next_step_index=index, error=str(message))
             return f"Plan execution stopped at step {index}: {line}\nError: {message}"
         executed += 1
 
+    _save_runplan_state(plan_path, "completed", next_step_index=len(lines) + 1)
     return f"Plan completed. Executed {executed} subagent command(s)."
 
 
@@ -446,27 +507,32 @@ def parse_runplan_spec(spec):
     tokens = shlex.split(str(spec or ""), posix=True)
     path = ""
     from_step = 1
+    resume = False
     i = 0
     while i < len(tokens):
         token = tokens[i]
+        if token == "--resume":
+            resume = True
+            i += 1
+            continue
         if token == "--from":
             if i + 1 >= len(tokens):
-                return None, None, "Missing value for --from"
+                return None, None, None, "Missing value for --from"
             try:
                 from_step = int(tokens[i + 1])
             except Exception:
-                return None, None, "Invalid --from value. Use an integer >= 1."
+                return None, None, None, "Invalid --from value. Use an integer >= 1."
             i += 2
             continue
         if token.startswith("--"):
-            return None, None, f"Unknown option: {token}"
+            return None, None, None, f"Unknown option: {token}"
         if path:
-            return None, None, "Only one plan file path is allowed."
+            return None, None, None, "Only one plan file path is allowed."
         path = token
         i += 1
     if from_step < 1:
-        return None, None, "Invalid --from value. Use an integer >= 1."
-    return path, from_step, None
+        return None, None, None, "Invalid --from value. Use an integer >= 1."
+    return path, from_step, resume, None
 
 
 def run_plan_subagent_step(line, state, runtime):
@@ -647,11 +713,13 @@ def run_edit_file(runtime, path):
     if preview:
         runtime.state.dry_run = True
     try:
-        task_result = runtime.run_task(task_prompt)
+        ok, task_result = run_task_with_error_capture(runtime, runtime.state, task_prompt)
     finally:
         runtime.state.edit_target_file = old_target
         runtime.state.edit_preview_mode = old_preview
         runtime.state.dry_run = old_dry_run
+    if not ok:
+        return f"Task failed.\n{task_result}"
 
     if preview:
         return f"Preview complete. No changes applied.\n{task_result}"
@@ -1191,7 +1259,10 @@ def taskretry(runtime, state, spec):
         if "review_enabled" in overrides:
             state.review_enabled = overrides["review_enabled"]
         state.retry_safe_mode = bool(overrides.get("retry_safe_mode", False))
-        return runtime.run_task(user_input)
+        ok, result = run_task_with_error_capture(runtime, state, user_input)
+        if not ok:
+            return f"Task failed.\n{result}"
+        return result
     finally:
         state.provider_mode = old_provider
         state.max_tool_iterations = old_tooliters
@@ -1382,6 +1453,101 @@ def reload_plugins_from_manifest():
     PLUGIN_MANAGER.load_manifest(config.PLUGIN_MANIFEST_FILE)
     COMMANDS.update(PLUGIN_MANAGER.get_help_entries())
     return f"Plugins reloaded. commands={len(PLUGIN_MANAGER.commands)} hooks={sum(len(v) for v in PLUGIN_MANAGER.hooks.values())}"
+
+
+def load_plugin_manifest_data():
+    manifest_path = config.PLUGIN_MANIFEST_FILE
+    if not manifest_path.exists():
+        return None, f"Plugin manifest not found: {manifest_path}"
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return None, f"Plugin manifest read error: {exc}"
+    if not isinstance(data, dict):
+        return None, "Plugin manifest must be a JSON object."
+    plugins = data.get("plugins")
+    if not isinstance(plugins, list):
+        return None, "Plugin manifest field 'plugins' must be a list."
+    return data, None
+
+
+def plugin_list_text():
+    data, err = load_plugin_manifest_data()
+    if err:
+        return err
+    rows = []
+    active_commands = {cmd.plugin_name for cmd in PLUGIN_MANAGER.commands.values()}
+    active_hooks = {hook.plugin_name for items in PLUGIN_MANAGER.hooks.values() for hook in items}
+    for item in data.get("plugins", []):
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name", "")).strip() or "unnamed"
+        enabled = bool(item.get("enabled", True))
+        active = name in active_commands or name in active_hooks
+        rows.append((name, enabled, active))
+    if not rows:
+        return "No plugins in manifest."
+    lines = ["Plugins:"]
+    for name, enabled, active in rows:
+        lines.append(f"- {name}: enabled={'yes' if enabled else 'no'} active={'yes' if active else 'no'}")
+    return "\n".join(lines)
+
+
+def plugin_info_text(spec):
+    target_name = str(spec or "").strip()
+    if not target_name:
+        return "Usage: /plugininfo NAME"
+    data, err = load_plugin_manifest_data()
+    if err:
+        return err
+    for item in data.get("plugins", []):
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name", "")).strip()
+        if name != target_name:
+            continue
+        module = str(item.get("module", "")).strip()
+        enabled = bool(item.get("enabled", True))
+        priority = int(item.get("priority", 100))
+        capabilities = item.get("capabilities", [])
+        commands = [str(c.get("name", "")).strip() for c in item.get("commands", []) if isinstance(c, dict)]
+        hooks = [str(h.get("name", "")).strip() for h in item.get("hooks", []) if isinstance(h, dict)]
+        return "\n".join([
+            f"Plugin: {name}",
+            f"Module: {module or 'n/a'}",
+            f"Enabled: {'yes' if enabled else 'no'}",
+            f"Priority: {priority}",
+            f"Capabilities: {', '.join(str(x) for x in capabilities) if capabilities else 'none'}",
+            f"Commands: {', '.join(commands) if commands else 'none'}",
+            f"Hooks: {', '.join(hooks) if hooks else 'none'}",
+        ])
+    return f"Plugin not found: {target_name}"
+
+
+def plugin_validate_text():
+    data, err = load_plugin_manifest_data()
+    if err:
+        return err
+    lines = ["Plugin manifest validation: PASS"]
+    plugins = data.get("plugins", [])
+    for i, item in enumerate(plugins, start=1):
+        if not isinstance(item, dict):
+            return f"Plugin manifest validation: FAIL\n- item #{i} is not an object"
+        name = str(item.get("name", "")).strip()
+        module = str(item.get("module", "")).strip()
+        if not name or not module:
+            return f"Plugin manifest validation: FAIL\n- plugin item #{i} missing name/module"
+    from .plugins import PluginManager
+    checker = PluginManager()
+    checker.load_manifest(config.PLUGIN_MANIFEST_FILE)
+    if checker.errors:
+        lines[0] = "Plugin manifest validation: WARN"
+        lines.append("- loader errors:")
+        for e in checker.errors:
+            lines.append(f"  - {e}")
+    else:
+        lines.append(f"- load check: OK (commands={len(checker.commands)} hooks={sum(len(v) for v in checker.hooks.values())})")
+    return "\n".join(lines)
 
 
 def set_plugin_enabled(spec, enabled):
@@ -1784,6 +1950,15 @@ def handle_exact_command(user_input, state, runtime):
     if user_input == "/plugins":
         print(plugins_text())
         return True
+    if user_input == "/pluginlist":
+        print(plugin_list_text())
+        return True
+    if user_input == "/pluginreload":
+        print(reload_plugins_from_manifest())
+        return True
+    if user_input == "/pluginvalidate":
+        print(plugin_validate_text())
+        return True
     if user_input == "/clear":
         runtime.reset_messages()
         ui.info("Conversation memory cleared.")
@@ -1846,6 +2021,25 @@ def handle_exact_command(user_input, state, runtime):
     if user_input == "/memoryclear":
         print(clear_memory())
         return True
+    if user_input == "/lasterror":
+        text = str(getattr(state, "last_error", "") or "").rstrip()
+        print(text or "No captured error.")
+        return True
+    if user_input == "/retrylast":
+        last_error = str(getattr(state, "last_error", "") or "").strip()
+        if not last_error:
+            print("No captured error to retry.")
+            return True
+        prompt = (
+            "Analyze and fix this error/traceback safely. Inspect relevant files before changing anything. "
+            f"Error:\n{last_error}"
+        )
+        ok, result = run_task_with_error_capture(runtime, state, prompt)
+        if ok:
+            ui.panel(result, title="Retry Last Error", style="green")
+        else:
+            ui.panel(result, title="Retry Last Error Failed", style="red")
+        return True
     if user_input == "/runs":
         print(runs_text())
         return True
@@ -1866,8 +2060,12 @@ def handle_exact_command(user_input, state, runtime):
         print(reset_rankings())
         return True
     if user_input == "/tests":
-        result = runtime.run_task("Detect the project type, find the safest test or run command, and execute/suggest it safely.")
-        ui.panel(result, title="Tests", style="green")
+        ok, result = run_task_with_error_capture(
+            runtime,
+            state,
+            "Detect the project type, find the safest test or run command, and execute/suggest it safely.",
+        )
+        ui.panel(result, title="Tests" if ok else "Tests Failed", style="green" if ok else "red")
         return True
     return False
 
@@ -1966,6 +2164,12 @@ def handle_prefixed_command(user_input, state, runtime):
         return True
     if user_input == "/plugindisable":
         print(set_plugin_enabled("", False))
+        return True
+    if user_input.startswith("/plugininfo "):
+        print(plugin_info_text(user_input.split(" ", 1)[1]))
+        return True
+    if user_input == "/plugininfo":
+        print(plugin_info_text(""))
         return True
     if user_input.startswith("/projectnew "):
         try:
@@ -2087,31 +2291,31 @@ def handle_prefixed_command(user_input, state, runtime):
         return True
     if user_input == "/runplan" or user_input.startswith("/runplan "):
         spec = user_input.split(" ", 1)[1].strip() if " " in user_input else ""
-        plan_path, from_step, err = parse_runplan_spec(spec)
+        plan_path, from_step, resume, err = parse_runplan_spec(spec)
         if err:
-            print(f"Usage: /runplan [FILE] [--from N]\n{err}")
+            print(f"Usage: /runplan [FILE] [--from N] [--resume]\n{err}")
         else:
-            print(run_plan_file(runtime, state, plan_path, from_step=from_step))
+            print(run_plan_file(runtime, state, plan_path, from_step=from_step, resume=resume))
         return True
     if user_input.startswith("/explain "):
         target = user_input.split(" ", 1)[1].strip()
-        result = runtime.run_task(f"Explain this file clearly. Read it first, summarize purpose, main functions/classes, dependencies, and risks: {target}")
-        ui.panel(result, title="File Explanation", style="cyan")
+        ok, result = run_task_with_error_capture(runtime, state, f"Explain this file clearly. Read it first, summarize purpose, main functions/classes, dependencies, and risks: {target}")
+        ui.panel(result, title="File Explanation" if ok else "File Explanation Failed", style="cyan" if ok else "red")
         return True
     if user_input.startswith("/reviewfile "):
         target = user_input.split(" ", 1)[1].strip()
-        result = runtime.run_task(f"Review this file for bugs, maintainability, security, and improvement opportunities. Read it first: {target}")
-        ui.panel(result, title="File Review", style="yellow")
+        ok, result = run_task_with_error_capture(runtime, state, f"Review this file for bugs, maintainability, security, and improvement opportunities. Read it first: {target}")
+        ui.panel(result, title="File Review" if ok else "File Review Failed", style="yellow" if ok else "red")
         return True
     if user_input.startswith("/refactor "):
         target = user_input.split(" ", 1)[1].strip()
-        result = runtime.run_task(f"Propose a safe refactor plan for this file. Do not modify unless explicitly necessary and safe. Read it first: {target}")
-        ui.panel(result, title="Refactor Suggestions", style="green")
+        ok, result = run_task_with_error_capture(runtime, state, f"Propose a safe refactor plan for this file. Do not modify unless explicitly necessary and safe. Read it first: {target}")
+        ui.panel(result, title="Refactor Suggestions" if ok else "Refactor Failed", style="green" if ok else "red")
         return True
     if user_input.startswith("/fix "):
         error_text = user_input.split(" ", 1)[1].strip()
-        result = runtime.run_task(f"Analyze and fix this error/traceback safely. Inspect relevant files before changing anything. Error: {error_text}")
-        ui.panel(result, title="Fix Result", style="red")
+        ok, result = run_task_with_error_capture(runtime, state, f"Analyze and fix this error/traceback safely. Inspect relevant files before changing anything. Error: {error_text}")
+        ui.panel(result, title="Fix Result" if ok else "Fix Failed", style="red")
         return True
     if user_input.startswith("/dryrun "):
         state.dry_run = set_bool(user_input.split(" ", 1)[1])
@@ -2214,10 +2418,12 @@ def restart_app():
 def parse_runtime_flags(argv):
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--headless", action="store_true")
+    parser.add_argument("--non-interactive", action="store_true")
     parser.add_argument("--approve-cmd", action="append", default=[])
     args, _unknown = parser.parse_known_args(list(argv or []))
     return {
-        "headless": bool(args.headless),
+        "headless": bool(args.headless or args.non_interactive),
+        "non_interactive": bool(args.non_interactive),
         "approve_cmd": [str(x).strip() for x in args.approve_cmd if str(x).strip()],
     }
 
@@ -2252,7 +2458,7 @@ def main():
     for r in state.routes:
         print("-", r)
 
-    ui.info("Initialization complete. Type /help to start.")
+    ui.info("Initialization complete.")
 
     while True:
         user_input = read_user_input(ui.cyan(f"You ({state.active_project}): ")).strip()
@@ -2274,5 +2480,5 @@ def main():
         if invalid_command(user_input):
             continue
 
-        result = runtime.run_task(user_input)
-        ui.panel(result, title="Final Summary", style="green")
+        ok, result = run_task_with_error_capture(runtime, state, user_input)
+        ui.panel(result, title="Final Summary" if ok else "Task Failed", style="green" if ok else "red")
