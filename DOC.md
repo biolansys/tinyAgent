@@ -92,6 +92,7 @@ Rule of thumb:
 ## CLI Flags
 
 The app supports runtime CLI flags when starting `python main.py`:
+These are the accepted runtime parameters:
 
 - `--headless`
   Blocks interactive confirmations unless commands are explicitly pre-approved.

@@ -97,6 +97,8 @@ python main.py
 
 ### CLI flags
 
+Accepted runtime parameters (exact):
+
 ```bash
 python main.py --headless
 python main.py --non-interactive
@@ -105,7 +107,7 @@ python main.py --headless --approve-cmd "python -m unittest discover -s tests -v
 
 - `--headless`: blocks interactive confirmations unless command is pre-approved.
 - `--non-interactive`: automation mode; implies headless confirmation behavior.
-- `--approve-cmd "COMMAND"`: pre-approves one exact shell command in headless/non-interactive mode (repeatable).
+- `--approve-cmd "COMMAND"`: pre-approves one exact shell command in headless/non-interactive mode. Repeat this flag to approve multiple commands.
 
 ### First commands after startup
 
