@@ -1,11 +1,11 @@
 {
   "openrouter::cognitivecomputations/dolphin-mistral-24b-venice-edition:free": {
-    "attempts": 19,
+    "attempts": 23,
     "successes": 0,
-    "failures": 19,
+    "failures": 23,
     "total_latency": 0.0,
     "last_error": "discovery: HTTP Error 429: Too Many Requests",
-    "last_used": "2026-05-01T09:32:27"
+    "last_used": "2026-05-17T21:41:27"
   },
   "openrouter::google/gemma-3-12b-it:free": {
     "attempts": 19,
@@ -48,76 +48,76 @@
     "last_used": "2026-05-01T09:32:31"
   },
   "openrouter::google/gemma-4-26b-a4b-it:free": {
-    "attempts": 19,
+    "attempts": 23,
     "successes": 0,
-    "failures": 19,
+    "failures": 23,
     "total_latency": 0.0,
     "last_error": "discovery: HTTP Error 429: Too Many Requests",
-    "last_used": "2026-05-01T09:32:31"
+    "last_used": "2026-05-17T21:41:27"
   },
   "openrouter::google/gemma-4-31b-it:free": {
-    "attempts": 19,
+    "attempts": 23,
     "successes": 0,
-    "failures": 19,
+    "failures": 23,
     "total_latency": 0.0,
     "last_error": "discovery: HTTP Error 429: Too Many Requests",
-    "last_used": "2026-05-01T09:32:32"
+    "last_used": "2026-05-17T21:41:28"
   },
   "openrouter::liquid/lfm-2.5-1.2b-instruct:free": {
-    "attempts": 19,
-    "successes": 1,
-    "failures": 18,
-    "total_latency": 0.5941412448883057,
-    "last_error": "",
-    "last_used": "2026-05-01T09:32:32"
+    "attempts": 77,
+    "successes": 34,
+    "failures": 43,
+    "total_latency": 72.45782780647278,
+    "last_error": "discovery: HTTP Error 429: Too Many Requests",
+    "last_used": "2026-05-17T21:41:31"
   },
   "openrouter::meta-llama/llama-3.2-3b-instruct:free": {
-    "attempts": 19,
+    "attempts": 23,
     "successes": 0,
-    "failures": 19,
+    "failures": 23,
     "total_latency": 0.0,
     "last_error": "discovery: HTTP Error 429: Too Many Requests",
-    "last_used": "2026-05-01T09:32:33"
+    "last_used": "2026-05-17T21:41:28"
   },
   "openrouter::meta-llama/llama-3.3-70b-instruct:free": {
-    "attempts": 19,
+    "attempts": 23,
     "successes": 0,
-    "failures": 19,
+    "failures": 23,
     "total_latency": 0.0,
     "last_error": "discovery: HTTP Error 429: Too Many Requests",
-    "last_used": "2026-05-01T09:32:33"
+    "last_used": "2026-05-17T21:41:29"
   },
   "openrouter::nousresearch/hermes-3-llama-3.1-405b:free": {
-    "attempts": 19,
+    "attempts": 23,
     "successes": 0,
-    "failures": 19,
+    "failures": 23,
     "total_latency": 0.0,
     "last_error": "discovery: HTTP Error 429: Too Many Requests",
-    "last_used": "2026-05-01T09:32:33"
+    "last_used": "2026-05-17T21:41:29"
   },
   "openrouter::openrouter/free": {
-    "attempts": 29,
-    "successes": 23,
+    "attempts": 30,
+    "successes": 24,
     "failures": 6,
-    "total_latency": 1132.3872573375702,
-    "last_error": "discovery: unexpected response",
-    "last_used": "2026-05-01T09:31:39"
+    "total_latency": 1142.1242280006409,
+    "last_error": "",
+    "last_used": "2026-05-17T10:51:20"
   },
   "openrouter::qwen/qwen3-coder:free": {
-    "attempts": 4,
+    "attempts": 9,
     "successes": 0,
-    "failures": 4,
+    "failures": 9,
     "total_latency": 0.0,
     "last_error": "discovery: HTTP Error 429: Too Many Requests",
-    "last_used": "2026-05-01T09:32:01"
+    "last_used": "2026-05-17T21:41:21"
   },
   "openrouter::qwen/qwen3-next-80b-a3b-instruct:free": {
-    "attempts": 4,
+    "attempts": 9,
     "successes": 0,
-    "failures": 4,
+    "failures": 9,
     "total_latency": 0.0,
     "last_error": "discovery: HTTP Error 429: Too Many Requests",
-    "last_used": "2026-05-01T09:32:02"
+    "last_used": "2026-05-17T21:41:22"
   },
   "openrouter::baidu/qianfan-ocr-fast:free": {
     "attempts": 4,
@@ -128,20 +128,20 @@
     "last_used": "2026-05-01T09:32:04"
   },
   "openrouter::google/lyria-3-clip-preview": {
-    "attempts": 4,
+    "attempts": 5,
     "successes": 0,
-    "failures": 4,
+    "failures": 5,
     "total_latency": 0.0,
     "last_error": "discovery: HTTP Error 502: Bad Gateway",
-    "last_used": "2026-05-01T09:32:05"
+    "last_used": "2026-05-17T10:51:37"
   },
   "openrouter::google/lyria-3-pro-preview": {
-    "attempts": 4,
+    "attempts": 5,
     "successes": 0,
-    "failures": 4,
+    "failures": 5,
     "total_latency": 0.0,
     "last_error": "discovery: HTTP Error 502: Bad Gateway",
-    "last_used": "2026-05-01T09:32:06"
+    "last_used": "2026-05-17T10:51:38"
   },
   "openrouter::inclusionai/ling-2.6-1t:free": {
     "attempts": 36,
@@ -152,100 +152,100 @@
     "last_used": "2026-05-01T21:19:09"
   },
   "openrouter::liquid/lfm-2.5-1.2b-thinking:free": {
-    "attempts": 4,
+    "attempts": 5,
     "successes": 0,
-    "failures": 4,
+    "failures": 5,
     "total_latency": 0.0,
     "last_error": "discovery: unexpected response",
-    "last_used": "2026-05-01T09:32:07"
+    "last_used": "2026-05-17T10:51:38"
   },
   "openrouter::minimax/minimax-m2.5:free": {
-    "attempts": 5,
-    "successes": 5,
+    "attempts": 6,
+    "successes": 6,
     "failures": 0,
-    "total_latency": 91.60640811920166,
+    "total_latency": 94.35720133781433,
     "last_error": "",
-    "last_used": "2026-05-01T09:31:38"
+    "last_used": "2026-05-17T10:51:07"
   },
   "openrouter::nvidia/nemotron-3-nano-30b-a3b:free": {
-    "attempts": 4,
+    "attempts": 5,
     "successes": 0,
-    "failures": 4,
+    "failures": 5,
     "total_latency": 0.0,
     "last_error": "discovery: unexpected response",
-    "last_used": "2026-05-01T09:32:08"
+    "last_used": "2026-05-17T10:51:39"
   },
   "openrouter::nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free": {
-    "attempts": 4,
+    "attempts": 5,
     "successes": 0,
-    "failures": 4,
+    "failures": 5,
     "total_latency": 0.0,
     "last_error": "discovery: unexpected response",
-    "last_used": "2026-05-01T09:32:09"
+    "last_used": "2026-05-17T10:51:40"
   },
   "openrouter::nvidia/nemotron-3-super-120b-a12b:free": {
-    "attempts": 4,
+    "attempts": 5,
     "successes": 0,
-    "failures": 4,
+    "failures": 5,
     "total_latency": 0.0,
     "last_error": "discovery: unexpected response",
-    "last_used": "2026-05-01T09:32:09"
+    "last_used": "2026-05-17T10:51:40"
   },
   "openrouter::nvidia/nemotron-nano-12b-v2-vl:free": {
-    "attempts": 4,
+    "attempts": 5,
     "successes": 0,
-    "failures": 4,
+    "failures": 5,
     "total_latency": 0.0,
     "last_error": "discovery: unexpected response",
-    "last_used": "2026-05-01T09:32:11"
+    "last_used": "2026-05-17T10:56:40"
   },
   "openrouter::nvidia/nemotron-nano-9b-v2:free": {
-    "attempts": 4,
+    "attempts": 5,
     "successes": 0,
-    "failures": 4,
+    "failures": 5,
     "total_latency": 0.0,
     "last_error": "discovery: unexpected response",
-    "last_used": "2026-05-01T09:32:18"
+    "last_used": "2026-05-17T10:56:41"
   },
   "openrouter::openai/gpt-oss-120b:free": {
-    "attempts": 13,
-    "successes": 13,
+    "attempts": 14,
+    "successes": 14,
     "failures": 0,
-    "total_latency": 81.38741660118103,
+    "total_latency": 83.90738105773926,
     "last_error": "",
-    "last_used": "2026-05-01T09:31:35"
+    "last_used": "2026-05-17T10:51:04"
   },
   "openrouter::openai/gpt-oss-20b:free": {
-    "attempts": 187,
-    "successes": 187,
+    "attempts": 188,
+    "successes": 188,
     "failures": 0,
-    "total_latency": 1124.4653425216675,
+    "total_latency": 1128.8847665786743,
     "last_error": "",
-    "last_used": "2026-05-01T09:31:33"
+    "last_used": "2026-05-17T10:51:02"
   },
   "openrouter::openrouter/owl-alpha": {
-    "attempts": 4,
+    "attempts": 5,
     "successes": 0,
-    "failures": 4,
+    "failures": 5,
     "total_latency": 0.0,
     "last_error": "discovery: unexpected response",
-    "last_used": "2026-05-01T09:32:22"
+    "last_used": "2026-05-17T10:56:44"
   },
   "openrouter::poolside/laguna-m.1:free": {
-    "attempts": 4,
+    "attempts": 5,
     "successes": 0,
-    "failures": 4,
+    "failures": 5,
     "total_latency": 0.0,
     "last_error": "discovery: unexpected response",
-    "last_used": "2026-05-01T09:32:23"
+    "last_used": "2026-05-17T10:56:44"
   },
   "openrouter::poolside/laguna-xs.2:free": {
-    "attempts": 4,
+    "attempts": 5,
     "successes": 0,
-    "failures": 4,
+    "failures": 5,
     "total_latency": 0.0,
     "last_error": "discovery: unexpected response",
-    "last_used": "2026-05-01T09:32:23"
+    "last_used": "2026-05-17T10:56:45"
   },
   "openrouter::tencent/hy3-preview:free": {
     "attempts": 4,
@@ -256,419 +256,443 @@
     "last_used": "2026-05-01T09:32:26"
   },
   "openrouter::z-ai/glm-4.5-air:free": {
+    "attempts": 5,
+    "successes": 0,
+    "failures": 5,
+    "total_latency": 0.0,
+    "last_error": "discovery: unexpected response",
+    "last_used": "2026-05-17T10:56:50"
+  },
+  "huggingface::Qwen/Qwen3-Coder-480B-A35B-Instruct": {
+    "attempts": 158,
+    "successes": 131,
+    "failures": 27,
+    "total_latency": 515.2345187664032,
+    "last_error": "discovery: HTTP Error 402: Payment Required",
+    "last_used": "2026-05-17T21:41:23"
+  },
+  "huggingface::meta-llama/Llama-3.1-8B-Instruct": {
+    "attempts": 8,
+    "successes": 0,
+    "failures": 8,
+    "total_latency": 0.0,
+    "last_error": "discovery: unexpected response",
+    "last_used": "2026-05-17T21:41:20"
+  },
+  "huggingface::openai/gpt-oss-120b": {
+    "attempts": 8,
+    "successes": 0,
+    "failures": 8,
+    "total_latency": 0.0,
+    "last_error": "discovery: HTTP Error 402: Payment Required",
+    "last_used": "2026-05-17T21:41:20"
+  },
+  "huggingface::Qwen/Qwen2.5-Coder-32B-Instruct": {
+    "attempts": 54,
+    "successes": 30,
+    "failures": 24,
+    "total_latency": 28.215744733810425,
+    "last_error": "discovery: HTTP Error 402: Payment Required",
+    "last_used": "2026-05-17T21:41:23"
+  },
+  "mistral::codestral-2508": {
+    "attempts": 6,
+    "successes": 0,
+    "failures": 6,
+    "total_latency": 0.0,
+    "last_error": "discovery: unexpected response",
+    "last_used": "2026-05-17T21:41:18"
+  },
+  "mistral::codestral-latest": {
+    "attempts": 6,
+    "successes": 0,
+    "failures": 6,
+    "total_latency": 0.0,
+    "last_error": "discovery: unexpected response",
+    "last_used": "2026-05-17T21:41:19"
+  },
+  "mistral::devstral-medium-2507": {
+    "attempts": 1029,
+    "successes": 980,
+    "failures": 49,
+    "total_latency": 1908.8974795341492,
+    "last_error": "",
+    "last_used": "2026-05-17T22:37:30"
+  },
+  "mistral::devstral-medium-latest": {
+    "attempts": 2426,
+    "successes": 2376,
+    "failures": 50,
+    "total_latency": 10081.88541674614,
+    "last_error": "",
+    "last_used": "2026-05-17T21:41:30"
+  },
+  "mistral::devstral-small-2507": {
+    "attempts": 1050,
+    "successes": 1000,
+    "failures": 50,
+    "total_latency": 975.0823740959167,
+    "last_error": "",
+    "last_used": "2026-05-17T21:41:30"
+  },
+  "mistral::magistral-medium-2509": {
+    "attempts": 6,
+    "successes": 0,
+    "failures": 6,
+    "total_latency": 0.0,
+    "last_error": "discovery: unexpected response",
+    "last_used": "2026-05-17T21:41:19"
+  },
+  "mistral::magistral-medium-latest": {
+    "attempts": 6,
+    "successes": 0,
+    "failures": 6,
+    "total_latency": 0.0,
+    "last_error": "discovery: unexpected response",
+    "last_used": "2026-05-17T21:41:20"
+  },
+  "mistral::magistral-small-2509": {
+    "attempts": 6,
+    "successes": 0,
+    "failures": 6,
+    "total_latency": 0.0,
+    "last_error": "discovery: unexpected response",
+    "last_used": "2026-05-17T21:41:20"
+  },
+  "mistral::magistral-small-latest": {
+    "attempts": 1708,
+    "successes": 1658,
+    "failures": 50,
+    "total_latency": 2655.680520296097,
+    "last_error": "",
+    "last_used": "2026-05-17T21:49:54"
+  },
+  "mistral::mistral-large-2411": {
+    "attempts": 80,
+    "successes": 40,
+    "failures": 40,
+    "total_latency": 228.76867818832397,
+    "last_error": "",
+    "last_used": "2026-05-17T21:54:51"
+  },
+  "mistral::mistral-large-2512": {
+    "attempts": 12,
+    "successes": 0,
+    "failures": 12,
+    "total_latency": 0.0,
+    "last_error": "discovery: unexpected response",
+    "last_used": "2026-05-17T21:41:23"
+  },
+  "mistral::mistral-large-latest": {
     "attempts": 4,
     "successes": 0,
     "failures": 4,
     "total_latency": 0.0,
-    "last_error": "discovery: HTTP Error 429: Too Many Requests",
-    "last_used": "2026-05-01T09:32:27"
-  },
-  "huggingface::Qwen/Qwen3-Coder-480B-A35B-Instruct": {
-    "attempts": 34,
-    "successes": 32,
-    "failures": 2,
-    "total_latency": 79.70107650756836,
-    "last_error": "",
-    "last_used": "2026-05-14T23:01:01"
-  },
-  "huggingface::meta-llama/Llama-3.1-8B-Instruct": {
-    "attempts": 3,
-    "successes": 0,
-    "failures": 3,
-    "total_latency": 0.0,
     "last_error": "discovery: unexpected response",
-    "last_used": "2026-05-01T09:31:56"
-  },
-  "huggingface::openai/gpt-oss-120b": {
-    "attempts": 3,
-    "successes": 0,
-    "failures": 3,
-    "total_latency": 0.0,
-    "last_error": "discovery: unexpected response",
-    "last_used": "2026-05-01T09:32:00"
-  },
-  "huggingface::Qwen/Qwen2.5-Coder-32B-Instruct": {
-    "attempts": 11,
-    "successes": 9,
-    "failures": 2,
-    "total_latency": 5.254426717758179,
-    "last_error": "",
-    "last_used": "2026-05-14T18:32:17"
-  },
-  "mistral::codestral-2508": {
-    "attempts": 1,
-    "successes": 0,
-    "failures": 1,
-    "total_latency": 0.0,
-    "last_error": "discovery: unexpected response",
-    "last_used": "2026-05-01T09:31:39"
-  },
-  "mistral::codestral-latest": {
-    "attempts": 1,
-    "successes": 0,
-    "failures": 1,
-    "total_latency": 0.0,
-    "last_error": "discovery: unexpected response",
-    "last_used": "2026-05-01T09:31:40"
-  },
-  "mistral::devstral-medium-2507": {
-    "attempts": 165,
-    "successes": 160,
-    "failures": 5,
-    "total_latency": 285.0248951911926,
-    "last_error": "mistral::devstral-medium-2507: HTTP Error 429: Too Many Requests",
-    "last_used": "2026-05-14T22:59:17"
-  },
-  "mistral::devstral-medium-latest": {
-    "attempts": 2370,
-    "successes": 2365,
-    "failures": 5,
-    "total_latency": 10074.937489032745,
-    "last_error": "mistral::devstral-medium-latest: HTTP Error 429: Too Many Requests",
-    "last_used": "2026-05-14T22:55:04"
-  },
-  "mistral::devstral-small-2507": {
-    "attempts": 128,
-    "successes": 122,
-    "failures": 6,
-    "total_latency": 139.44478273391724,
-    "last_error": "mistral::devstral-small-2507: HTTP Error 429: Too Many Requests",
-    "last_used": "2026-05-14T22:59:54"
-  },
-  "mistral::magistral-medium-2509": {
-    "attempts": 1,
-    "successes": 0,
-    "failures": 1,
-    "total_latency": 0.0,
-    "last_error": "discovery: unexpected response",
-    "last_used": "2026-05-01T09:31:41"
-  },
-  "mistral::magistral-medium-latest": {
-    "attempts": 1,
-    "successes": 0,
-    "failures": 1,
-    "total_latency": 0.0,
-    "last_error": "discovery: unexpected response",
-    "last_used": "2026-05-01T09:31:41"
-  },
-  "mistral::magistral-small-2509": {
-    "attempts": 1,
-    "successes": 0,
-    "failures": 1,
-    "total_latency": 0.0,
-    "last_error": "discovery: unexpected response",
-    "last_used": "2026-05-01T09:31:42"
-  },
-  "mistral::magistral-small-latest": {
-    "attempts": 1447,
-    "successes": 1441,
-    "failures": 6,
-    "total_latency": 2307.6153576374054,
-    "last_error": "mistral::magistral-small-latest: HTTP Error 503: Service Unavailable",
-    "last_used": "2026-05-14T22:59:52"
-  },
-  "mistral::mistral-large-2411": {
-    "attempts": 4,
-    "successes": 2,
-    "failures": 2,
-    "total_latency": 9.660226345062256,
-    "last_error": "discovery: HTTP Error 429: Too Many Requests",
-    "last_used": "2026-05-01T21:42:35"
-  },
-  "mistral::mistral-large-2512": {
-    "attempts": 2,
-    "successes": 0,
-    "failures": 2,
-    "total_latency": 0.0,
-    "last_error": "discovery: unexpected response",
-    "last_used": "2026-05-01T09:31:44"
-  },
-  "mistral::mistral-large-latest": {
-    "attempts": 2,
-    "successes": 0,
-    "failures": 2,
-    "total_latency": 0.0,
-    "last_error": "discovery: unexpected response",
-    "last_used": "2026-05-01T09:31:45"
+    "last_used": "2026-05-17T10:51:34"
   },
   "mistral::mistral-large-pixtral-2411": {
-    "attempts": 1,
+    "attempts": 2,
     "successes": 0,
-    "failures": 1,
+    "failures": 2,
     "total_latency": 0.0,
     "last_error": "discovery: unexpected response",
-    "last_used": "2026-05-01T09:31:45"
+    "last_used": "2026-05-17T10:51:30"
   },
   "mistral::mistral-medium": {
-    "attempts": 1,
+    "attempts": 2,
     "successes": 0,
-    "failures": 1,
+    "failures": 2,
     "total_latency": 0.0,
-    "last_error": "discovery: unexpected response",
-    "last_used": "2026-05-01T09:31:46"
+    "last_error": "discovery: HTTP Error 429: Too Many Requests",
+    "last_used": "2026-05-17T10:51:31"
   },
   "mistral::mistral-medium-2505": {
-    "attempts": 5,
-    "successes": 5,
+    "attempts": 6,
+    "successes": 6,
     "failures": 0,
-    "total_latency": 7.655030727386475,
+    "total_latency": 8.319861888885498,
     "last_error": "",
-    "last_used": "2026-05-01T10:00:01"
+    "last_used": "2026-05-17T10:50:55"
   },
   "mistral::mistral-medium-2508": {
-    "attempts": 1,
+    "attempts": 2,
     "successes": 0,
-    "failures": 1,
+    "failures": 2,
     "total_latency": 0.0,
-    "last_error": "discovery: unexpected response",
-    "last_used": "2026-05-01T09:31:46"
+    "last_error": "discovery: HTTP Error 429: Too Many Requests",
+    "last_used": "2026-05-17T10:51:31"
   },
   "mistral::mistral-medium-2604": {
-    "attempts": 3,
-    "successes": 3,
+    "attempts": 4,
+    "successes": 4,
     "failures": 0,
-    "total_latency": 6.809345483779907,
+    "total_latency": 7.071247577667236,
     "last_error": "",
-    "last_used": "2026-05-01T09:58:53"
+    "last_used": "2026-05-17T10:50:56"
   },
   "mistral::mistral-medium-3": {
-    "attempts": 5,
-    "successes": 5,
+    "attempts": 6,
+    "successes": 6,
     "failures": 0,
-    "total_latency": 6.122114658355713,
+    "total_latency": 6.708384037017822,
     "last_error": "",
-    "last_used": "2026-05-01T09:58:48"
+    "last_used": "2026-05-17T10:50:52"
   },
   "mistral::mistral-medium-3-5": {
+    "attempts": 4,
+    "successes": 4,
+    "failures": 0,
+    "total_latency": 5.330693244934082,
+    "last_error": "",
+    "last_used": "2026-05-17T10:50:55"
+  },
+  "mistral::mistral-medium-3.5": {
     "attempts": 3,
     "successes": 3,
     "failures": 0,
-    "total_latency": 5.031528949737549,
+    "total_latency": 3.294968605041504,
     "last_error": "",
-    "last_used": "2026-05-01T10:05:37"
-  },
-  "mistral::mistral-medium-3.5": {
-    "attempts": 2,
-    "successes": 2,
-    "failures": 0,
-    "total_latency": 3.0319230556488037,
-    "last_error": "",
-    "last_used": "2026-05-01T09:34:34"
+    "last_used": "2026-05-17T10:50:54"
   },
   "mistral::mistral-medium-c21211-r0-75": {
-    "attempts": 9,
-    "successes": 9,
-    "failures": 0,
-    "total_latency": 34.351502418518066,
-    "last_error": "",
-    "last_used": "2026-05-01T10:00:28"
-  },
-  "mistral::mistral-medium-latest": {
-    "attempts": 1,
-    "successes": 0,
-    "failures": 1,
-    "total_latency": 0.0,
-    "last_error": "discovery: unexpected response",
-    "last_used": "2026-05-01T09:31:48"
-  },
-  "mistral::mistral-small-2506": {
     "attempts": 10,
     "successes": 10,
     "failures": 0,
-    "total_latency": 13.06110954284668,
+    "total_latency": 34.61670470237732,
     "last_error": "",
-    "last_used": "2026-05-01T10:05:40"
+    "last_used": "2026-05-17T10:50:57"
   },
-  "mistral::mistral-small-2603": {
-    "attempts": 13,
-    "successes": 13,
-    "failures": 0,
-    "total_latency": 54.60209608078003,
-    "last_error": "",
-    "last_used": "2026-05-01T10:01:18"
-  },
-  "mistral::mistral-small-latest": {
-    "attempts": 4,
-    "successes": 4,
-    "failures": 0,
-    "total_latency": 4.891239643096924,
-    "last_error": "",
-    "last_used": "2026-05-01T10:00:35"
-  },
-  "mistral::mistral-tiny-2407": {
-    "attempts": 5,
-    "successes": 3,
-    "failures": 2,
-    "total_latency": 1.2297782897949219,
-    "last_error": "mistral::mistral-tiny-2407: HTTP Error 400: Bad Request",
-    "last_used": "2026-05-01T09:34:34"
-  },
-  "mistral::mistral-tiny-latest": {
-    "attempts": 5,
-    "successes": 3,
-    "failures": 2,
-    "total_latency": 3.5302650928497314,
-    "last_error": "mistral::mistral-tiny-latest: HTTP Error 400: Bad Request",
-    "last_used": "2026-05-01T10:27:59"
-  },
-  "mistral::mistral-vibe-cli-fast": {
-    "attempts": 35,
-    "successes": 35,
-    "failures": 0,
-    "total_latency": 44.399871587753296,
-    "last_error": "",
-    "last_used": "2026-05-01T09:59:26"
-  },
-  "mistral::mistral-vibe-cli-latest": {
-    "attempts": 7,
-    "successes": 7,
-    "failures": 0,
-    "total_latency": 19.623693466186523,
-    "last_error": "",
-    "last_used": "2026-05-01T09:59:40"
-  },
-  "mistral::mistral-vibe-cli-with-tools": {
-    "attempts": 1,
+  "mistral::mistral-medium-latest": {
+    "attempts": 2,
     "successes": 0,
-    "failures": 1,
-    "total_latency": 0.0,
-    "last_error": "discovery: unexpected response",
-    "last_used": "2026-05-01T09:31:51"
-  },
-  "mistral::open-mistral-nemo": {
-    "attempts": 4,
-    "successes": 2,
     "failures": 2,
-    "total_latency": 0.7993204593658447,
-    "last_error": "mistral::open-mistral-nemo: HTTP Error 400: Bad Request",
-    "last_used": "2026-05-01T09:34:31"
-  },
-  "mistral::open-mistral-nemo-2407": {
-    "attempts": 6,
-    "successes": 4,
-    "failures": 2,
-    "total_latency": 2.1421568393707275,
-    "last_error": "mistral::open-mistral-nemo-2407: HTTP Error 400: Bad Request",
-    "last_used": "2026-05-01T09:34:57"
-  },
-  "mistral::pixtral-large-2411": {
-    "attempts": 1,
-    "successes": 0,
-    "failures": 1,
     "total_latency": 0.0,
-    "last_error": "discovery: unexpected response",
-    "last_used": "2026-05-01T09:31:52"
+    "last_error": "discovery: HTTP Error 429: Too Many Requests",
+    "last_used": "2026-05-17T10:51:31"
   },
-  "mistral::pixtral-large-latest": {
-    "attempts": 1,
-    "successes": 0,
-    "failures": 1,
-    "total_latency": 0.0,
-    "last_error": "discovery: unexpected response",
-    "last_used": "2026-05-01T09:31:53"
-  },
-  "mistral::voxtral-small-2507": {
-    "attempts": 4,
-    "successes": 4,
-    "failures": 0,
-    "total_latency": 6.124706029891968,
-    "last_error": "",
-    "last_used": "2026-05-01T10:00:33"
-  },
-  "mistral::voxtral-small-latest": {
-    "attempts": 6,
-    "successes": 6,
-    "failures": 0,
-    "total_latency": 7.910406827926636,
-    "last_error": "",
-    "last_used": "2026-05-01T10:05:26"
-  },
-  "mistral::devstral-2512": {
-    "attempts": 5,
-    "successes": 5,
-    "failures": 0,
-    "total_latency": 10.154079675674438,
-    "last_error": "",
-    "last_used": "2026-05-01T10:05:46"
-  },
-  "mistral::devstral-latest": {
-    "attempts": 6,
-    "successes": 6,
-    "failures": 0,
-    "total_latency": 7.355792760848999,
-    "last_error": "",
-    "last_used": "2026-05-01T09:58:22"
-  },
-  "mistral::labs-leanstral-2603": {
-    "attempts": 1,
-    "successes": 0,
-    "failures": 1,
-    "total_latency": 0.0,
-    "last_error": "discovery: HTTP Error 403: Forbidden",
-    "last_used": "2026-05-01T09:31:54"
-  },
-  "mistral::ministral-14b-2512": {
+  "mistral::mistral-small-2506": {
     "attempts": 11,
     "successes": 11,
     "failures": 0,
-    "total_latency": 18.727895259857178,
+    "total_latency": 13.285383224487305,
     "last_error": "",
-    "last_used": "2026-05-01T11:09:19"
+    "last_used": "2026-05-17T10:50:53"
   },
-  "mistral::ministral-14b-latest": {
+  "mistral::mistral-small-2603": {
+    "attempts": 14,
+    "successes": 14,
+    "failures": 0,
+    "total_latency": 54.88627743721008,
+    "last_error": "",
+    "last_used": "2026-05-17T10:50:57"
+  },
+  "mistral::mistral-small-latest": {
+    "attempts": 5,
+    "successes": 5,
+    "failures": 0,
+    "total_latency": 5.184075832366943,
+    "last_error": "",
+    "last_used": "2026-05-17T10:50:52"
+  },
+  "mistral::mistral-tiny-2407": {
+    "attempts": 6,
+    "successes": 4,
+    "failures": 2,
+    "total_latency": 1.4612751007080078,
+    "last_error": "",
+    "last_used": "2026-05-17T10:51:08"
+  },
+  "mistral::mistral-tiny-latest": {
+    "attempts": 6,
+    "successes": 4,
+    "failures": 2,
+    "total_latency": 3.7546799182891846,
+    "last_error": "",
+    "last_used": "2026-05-17T10:51:08"
+  },
+  "mistral::mistral-vibe-cli-fast": {
+    "attempts": 36,
+    "successes": 36,
+    "failures": 0,
+    "total_latency": 44.77825355529785,
+    "last_error": "",
+    "last_used": "2026-05-17T10:50:53"
+  },
+  "mistral::mistral-vibe-cli-latest": {
+    "attempts": 8,
+    "successes": 8,
+    "failures": 0,
+    "total_latency": 20.029592275619507,
+    "last_error": "",
+    "last_used": "2026-05-17T10:50:56"
+  },
+  "mistral::mistral-vibe-cli-with-tools": {
+    "attempts": 2,
+    "successes": 0,
+    "failures": 2,
+    "total_latency": 0.0,
+    "last_error": "discovery: HTTP Error 429: Too Many Requests",
+    "last_used": "2026-05-17T10:51:31"
+  },
+  "mistral::open-mistral-nemo": {
+    "attempts": 5,
+    "successes": 3,
+    "failures": 2,
+    "total_latency": 1.2619421482086182,
+    "last_error": "",
+    "last_used": "2026-05-17T10:51:09"
+  },
+  "mistral::open-mistral-nemo-2407": {
+    "attempts": 7,
+    "successes": 5,
+    "failures": 2,
+    "total_latency": 2.37981915473938,
+    "last_error": "",
+    "last_used": "2026-05-17T10:51:08"
+  },
+  "mistral::pixtral-large-2411": {
+    "attempts": 2,
+    "successes": 0,
+    "failures": 2,
+    "total_latency": 0.0,
+    "last_error": "discovery: unexpected response",
+    "last_used": "2026-05-17T10:51:32"
+  },
+  "mistral::pixtral-large-latest": {
+    "attempts": 2,
+    "successes": 0,
+    "failures": 2,
+    "total_latency": 0.0,
+    "last_error": "discovery: unexpected response",
+    "last_used": "2026-05-17T10:51:32"
+  },
+  "mistral::voxtral-small-2507": {
+    "attempts": 5,
+    "successes": 5,
+    "failures": 0,
+    "total_latency": 6.3114447593688965,
+    "last_error": "",
+    "last_used": "2026-05-17T10:50:55"
+  },
+  "mistral::voxtral-small-latest": {
+    "attempts": 7,
+    "successes": 7,
+    "failures": 0,
+    "total_latency": 8.094857454299927,
+    "last_error": "",
+    "last_used": "2026-05-17T10:50:54"
+  },
+  "mistral::devstral-2512": {
     "attempts": 6,
     "successes": 6,
     "failures": 0,
-    "total_latency": 32.03633713722229,
+    "total_latency": 10.448652267456055,
     "last_error": "",
-    "last_used": "2026-05-01T09:58:19"
+    "last_used": "2026-05-17T10:50:56"
+  },
+  "mistral::devstral-latest": {
+    "attempts": 7,
+    "successes": 7,
+    "failures": 0,
+    "total_latency": 7.758105039596558,
+    "last_error": "",
+    "last_used": "2026-05-17T10:50:53"
+  },
+  "mistral::labs-leanstral-2603": {
+    "attempts": 2,
+    "successes": 0,
+    "failures": 2,
+    "total_latency": 0.0,
+    "last_error": "discovery: HTTP Error 403: Forbidden",
+    "last_used": "2026-05-17T10:51:32"
+  },
+  "mistral::ministral-14b-2512": {
+    "attempts": 12,
+    "successes": 12,
+    "failures": 0,
+    "total_latency": 18.954999446868896,
+    "last_error": "",
+    "last_used": "2026-05-17T10:50:55"
+  },
+  "mistral::ministral-14b-latest": {
+    "attempts": 7,
+    "successes": 7,
+    "failures": 0,
+    "total_latency": 32.32069230079651,
+    "last_error": "",
+    "last_used": "2026-05-17T10:50:57"
   },
   "mistral::ministral-3b-2512": {
-    "attempts": 2029,
-    "successes": 2029,
+    "attempts": 2370,
+    "successes": 2370,
     "failures": 0,
-    "total_latency": 1828.3971037864685,
+    "total_latency": 2260.7283465862274,
     "last_error": "",
-    "last_used": "2026-05-01T20:58:48"
+    "last_used": "2026-05-17T11:34:36"
   },
   "mistral::ministral-3b-latest": {
-    "attempts": 44,
-    "successes": 44,
+    "attempts": 45,
+    "successes": 45,
     "failures": 0,
-    "total_latency": 52.73513579368591,
+    "total_latency": 52.91883730888367,
     "last_error": "",
-    "last_used": "2026-05-01T10:28:02"
+    "last_used": "2026-05-17T10:50:51"
   },
   "mistral::ministral-8b-2512": {
-    "attempts": 1,
+    "attempts": 2,
     "successes": 0,
-    "failures": 1,
+    "failures": 2,
     "total_latency": 0.0,
     "last_error": "discovery: unexpected response",
-    "last_used": "2026-05-01T09:31:55"
+    "last_used": "2026-05-17T10:51:32"
   },
   "mistral::ministral-8b-latest": {
-    "attempts": 1,
+    "attempts": 2,
     "successes": 0,
-    "failures": 1,
+    "failures": 2,
     "total_latency": 0.0,
     "last_error": "discovery: unexpected response",
-    "last_used": "2026-05-01T09:31:55"
+    "last_used": "2026-05-17T10:51:33"
   },
   "mistral::voxtral-mini-2507": {
-    "attempts": 3,
-    "successes": 2,
+    "attempts": 4,
+    "successes": 3,
     "failures": 1,
-    "total_latency": 0.7027812004089355,
+    "total_latency": 0.956580638885498,
     "last_error": "",
-    "last_used": "2026-05-01T09:33:59"
+    "last_used": "2026-05-17T10:51:07"
   },
   "mistral::voxtral-mini-latest": {
-    "attempts": 3,
-    "successes": 2,
+    "attempts": 4,
+    "successes": 3,
     "failures": 1,
-    "total_latency": 0.8857855796813965,
+    "total_latency": 1.1489455699920654,
     "last_error": "",
-    "last_used": "2026-05-01T09:34:00"
+    "last_used": "2026-05-17T10:51:08"
+  },
+  "openrouter::deepseek/deepseek-v4-flash:free": {
+    "attempts": 5,
+    "successes": 0,
+    "failures": 5,
+    "total_latency": 0.0,
+    "last_error": "discovery: HTTP Error 429: Too Many Requests",
+    "last_used": "2026-05-17T21:41:18"
+  },
+  "openrouter::arcee-ai/trinity-large-thinking:free": {
+    "attempts": 5,
+    "successes": 0,
+    "failures": 5,
+    "total_latency": 0.0,
+    "last_error": "discovery: HTTP Error 429: Too Many Requests",
+    "last_used": "2026-05-17T21:41:18"
+  },
+  "openrouter::baidu/cobuddy:free": {
+    "attempts": 5,
+    "successes": 0,
+    "failures": 5,
+    "total_latency": 0.0,
+    "last_error": "discovery: HTTP Error 429: Too Many Requests",
+    "last_used": "2026-05-17T21:41:18"
   }
 }

@@ -765,6 +765,53 @@ def strip_markdown_fences(text):
     return "\n".join(lines[1:-1]).strip("\n")
 
 
+def _extract_json_object_text(text):
+    raw = str(text or "").strip()
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        return raw[start:end + 1]
+    return raw
+
+
+def _escape_control_chars_in_json_strings(text):
+    out = []
+    in_string = False
+    escape = False
+    for ch in str(text or ""):
+        if in_string:
+            if escape:
+                out.append(ch)
+                escape = False
+                continue
+            if ch == "\\":
+                out.append(ch)
+                escape = True
+                continue
+            if ch == '"':
+                out.append(ch)
+                in_string = False
+                continue
+            if ch == "\n":
+                out.append("\\n")
+                continue
+            if ch == "\r":
+                out.append("\\r")
+                continue
+            if ch == "\t":
+                out.append("\\t")
+                continue
+            if ord(ch) < 32:
+                out.append(f"\\u{ord(ch):04x}")
+                continue
+            out.append(ch)
+            continue
+        if ch == '"':
+            in_string = True
+        out.append(ch)
+    return "".join(out)
+
+
 def _normalize_worker_scope(target_file, scope_path):
     from .tools.files import normalize_agent_path, safe_path
 
@@ -785,11 +832,27 @@ def _normalize_worker_scope(target_file, scope_path):
 
 
 def parse_worker_patch_payload(content):
-    text = strip_markdown_fences(content)
+    text = _extract_json_object_text(strip_markdown_fences(content))
     try:
         data = json.loads(text)
     except Exception as exc:
-        raise ValueError(f"Worker must return JSON patches: {exc}") from exc
+        try:
+            data = json.loads(text, strict=False)
+        except Exception:
+            pass
+        else:
+            exc = None
+        if exc is None:
+            pass
+        else:
+            repaired = _escape_control_chars_in_json_strings(text)
+            try:
+                data = json.loads(repaired)
+            except Exception:
+                try:
+                    data = json.loads(repaired, strict=False)
+                except Exception:
+                    raise ValueError(f"Worker must return JSON patches: {exc}") from exc
     if not isinstance(data, dict):
         raise ValueError("Worker patch payload must be a JSON object")
     payload_version = data.get("payload_version")

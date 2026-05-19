@@ -887,6 +887,25 @@ class CliTests(unittest.TestCase):
         }))
         self.assertEqual([], payload["patches"])
 
+    def test_parse_worker_patch_payload_repairs_newlines_in_json_strings(self):
+        malformed = (
+            '{"payload_version":1,"target_file":"app.py","summary":"Update.",'
+            '"patches":[{"start_line":1,"end_line":1,"new_text":"line1\nline2","create_file":false}]}'
+        )
+        payload = cli.parse_worker_patch_payload(malformed)
+        self.assertEqual("app.py", payload["target_file"])
+        self.assertEqual("line1\nline2", payload["patches"][0]["new_text"])
+
+    def test_parse_worker_patch_payload_extracts_json_from_wrapped_text(self):
+        wrapped = (
+            "Worker output follows:\n"
+            '{"payload_version":1,"scope":".","summary":"ok","patches":[]}\n'
+            "done"
+        )
+        payload = cli.parse_worker_patch_payload(wrapped)
+        self.assertEqual(".", payload["scope"])
+        self.assertEqual([], payload["patches"])
+
     def test_validate_worker_patch_payload_replaces_requested_range(self):
         root = make_tmp_root("validate-existing")
         (root / "app.py").write_text("line1\nline2\n", encoding="utf-8")

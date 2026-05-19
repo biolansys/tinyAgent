@@ -1,0 +1,139 @@
+%PDF-1.4
+1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
+2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj
+3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj
+4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj
+5 0 obj << /Length 2535 >> stream
+BT
+/F1 11 Tf
+50 790 Td
+14 TL
+(Project Structure \(Presentation-Ready\)) Tj
+T*
+() Tj
+T*
+(1. Purpose) Tj
+T*
+(- Local AI coding agent for multi-project development.) Tj
+T*
+(- Uses LLM providers \(OpenRouter, Hugging Face, Mistral\) with safe tool execution.) Tj
+T*
+(- Enforces project isolation under workspace/.) Tj
+T*
+() Tj
+T*
+(2. High-Level Architecture) Tj
+T*
+(- main.py: entrypoint.) Tj
+T*
+(- openrouter_agent/cli.py: command router and interactive loop.) Tj
+T*
+(- openrouter_agent/agents/core.py: plan -> execute -> review/fix runtime.) Tj
+T*
+(- openrouter_agent/providers/: model routing, discovery, ranking.) Tj
+T*
+(- openrouter_agent/tools/: file/shell operations + tool schemas.) Tj
+T*
+(- plugins.py + plugins/: extension system.) Tj
+T*
+() Tj
+T*
+(3. Core Runtime Flow) Tj
+T*
+(- User prompt or slash command.) Tj
+T*
+(- Planner generates task steps.) Tj
+T*
+(- Executor runs steps with bounded tool iterations.) Tj
+T*
+(- Optional reviewer/fixer rounds for autonomous correction.) Tj
+T*
+(- Logs/audit/checkpoints persisted per active project.) Tj
+T*
+() Tj
+T*
+(4. Project Isolation Model) Tj
+T*
+(- All project work lives in workspace/<project>/.) Tj
+T*
+(- Per-project memory, session, index, command history, and task history.) Tj
+T*
+(- Git operations scoped to active project repository.) Tj
+T*
+(- Path normalization/safety blocks traversal outside project boundary.) Tj
+T*
+() Tj
+T*
+(5. Safety & Governance) Tj
+T*
+(- Shell command validation and confirmation gates.) Tj
+T*
+(- Dry-run mode for mutation preview.) Tj
+T*
+(- Edit-scope enforcement in /edit and scoped worker subagents.) Tj
+T*
+(- Plugin hook capabilities for policy control.) Tj
+T*
+() Tj
+T*
+(6. Extensibility) Tj
+T*
+(- Plugin manifest: plugins.json.) Tj
+T*
+(- Plugin modules can add slash commands and lifecycle hooks.) Tj
+T*
+() Tj
+T*
+(7. Operational Data Layout) Tj
+T*
+(- workspace/: managed projects.) Tj
+T*
+(- logs/: per-project audit/history/runs.) Tj
+T*
+(- backups/: pre-edit file backups.) Tj
+T*
+(- snapshots/: ZIP exports/snapshots.) Tj
+T*
+(- SKILL/: guidance packs.) Tj
+T*
+() Tj
+T*
+(8. Quality & Testing) Tj
+T*
+(- tests/ covers CLI, isolation, shell safety, providers, plugins, runtime, checkpoints.) Tj
+T*
+(- Run: python -m unittest discover -s tests -v) Tj
+T*
+() Tj
+T*
+(9. Suggested Slide Deck) Tj
+T*
+(1\) Problem & Goal) Tj
+T*
+(2\) System Overview) Tj
+T*
+(3\) Architecture Diagram) Tj
+T*
+(4\) Runtime Workflow) Tj
+T*
+(5\) Safety & Isolation) Tj
+T*
+(6\) Extensibility via Plugins) Tj
+T*
+(7\) Testing & Reliability) Tj
+T*
+(8\) Roadmap / Next Improvements) Tj
+ET
+endstream endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000311 00000 n 
+trailer << /Size 6 /Root 1 0 R >>
+startxref
+2898
+%%EOF
