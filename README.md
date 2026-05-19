@@ -320,6 +320,30 @@ Git behavior:
 /auditclear
 ```
 
+## Pre-Release Repo Hygiene
+
+Before creating a release commit or tag, make sure the repository is clean and reproducible.
+
+Current status snapshot:
+
+- Checked on 2026-05-19
+- `git status --short` returned no output (clean worktree)
+
+Recommended pre-tag checks:
+
+```bash
+git status --short
+python -m unittest discover -s tests -v
+git diff --stat
+git diff --cached --stat
+```
+
+Expected result before tagging:
+
+- `git status --short` is empty
+- no unstaged or staged changes remain unless intentionally part of the release commit
+- tests pass for the release environment
+
 - `/lasterror` prints the latest captured multi-line runtime exception/traceback.
 - `/retrylast` runs a fix task using the full latest captured error text.
 
